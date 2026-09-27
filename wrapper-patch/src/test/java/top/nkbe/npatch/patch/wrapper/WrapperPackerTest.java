@@ -19,10 +19,97 @@ import pxb.android.axml.AxmlVisitor;
 import pxb.android.axml.AxmlWriter;
 import pxb.android.axml.NodeVisitor;
 import top.nkbe.npatch.share.WrapperConfig;
+import top.nkbe.npatch.share.WrapperOptions;
 
 public class WrapperPackerTest {
     private static final String NS = "http://schemas.android.com/apk/res/android";
     @Rule public TemporaryFolder temporary = new TemporaryFolder();
+
+    @Test public void olderConfigurationsKeepOriginalBehavior() {
+        var gson = new com.google.gson.Gson();
+        var runtime = gson.fromJson("{\"standalone\":true}", top.nkbe.npatch.share.PatchConfig.class);
+        var wrapper = gson.fromJson("{\"formatVersion\":1}", WrapperConfig.class);
+        assertEquals(WrapperOptions.HTTP_ORIGINAL, runtime.httpPolicy);
+        assertFalse(runtime.requestOverlayPermission);
+        assertEquals(WrapperOptions.HTTP_ORIGINAL, wrapper.httpPolicy);
+        assertFalse(wrapper.requestOverlayPermission);
+    }
+
+    @Test public void defaultOptionsPreserveNetworkAndExistingPermissions() throws Exception {
+        List<String> result = attributes(new WrapperManifest(capabilitiesManifest()).rewrite("example.original"));
+        assertTrue(result.contains("application:usesCleartextTraffic=true"));
+        assertTrue(result.contains("application:networkSecurityConfig=2130903041"));
+        assertEquals(2, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW")).count());
+        assertTrue(result.contains("uses-permission:maxSdkVersion=22"));
+        assertThrows(IllegalArgumentException.class, () -> new WrapperOptions(3, false));
+    }
+
+    @Test public void overridesHttpWithoutChangingTlsAndNormalizesEnabledPermissions() throws Exception {
+        for (int policy : new int[] {WrapperOptions.HTTP_ALLOW, WrapperOptions.HTTP_BLOCK}) {
+            List<String> result = attributes(new WrapperManifest(capabilitiesManifest()).rewrite(
+                    "example.renamed", null, new WrapperOptions(policy, true)));
+            assertEquals(1, result.stream().filter(s -> s.startsWith("application:usesCleartextTraffic=")).count());
+            assertTrue(result.contains("application:usesCleartextTraffic=" + (policy == WrapperOptions.HTTP_ALLOW)));
+            assertTrue(result.contains("application:networkSecurityConfig=2130903041"));
+            assertEquals(1, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW")).count());
+            if (policy == WrapperOptions.HTTP_ALLOW) {
+                assertEquals(1, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.INTERNET")).count());
+                assertFalse(result.stream().anyMatch(s -> s.contains("maxSdkVersion")));
+                assertFalse(result.stream().anyMatch(s -> s.startsWith("uses-permission-sdk-23:")));
+            } else {
+                // Blocking cleartext never removes networking permission (HTTPS still works).
+                assertTrue(result.contains("uses-permission-sdk-23:name=android.permission.INTERNET"));
+            }
+        }
+    }
+
+    @Test public void addsMissingPermissionsOnlyWhenRequested() throws Exception {
+        WrapperManifest manifest = new WrapperManifest(manifest(null));
+        List<String> defaults = attributes(manifest.rewrite("example.original"));
+        assertFalse(defaults.stream().anyMatch(s -> s.contains("usesCleartextTraffic") || s.contains("SYSTEM_ALERT_WINDOW") || s.contains("android.permission.INTERNET")));
+        List<String> enabled = attributes(manifest.rewrite("example.original", null, new WrapperOptions(WrapperOptions.HTTP_ALLOW, true)));
+        assertTrue(enabled.contains("uses-permission:name=android.permission.INTERNET"));
+        assertTrue(enabled.contains("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW"));
+    }
+
+    @Test public void persistsCapabilitiesInBothConfigsAndKeepsEmbeddedApkIntact() throws Exception {
+        for (int policy : new int[] {WrapperOptions.HTTP_ORIGINAL, WrapperOptions.HTTP_ALLOW, WrapperOptions.HTTP_BLOCK}) {
+            File input = input("capabilities-" + policy + ".apk", false);
+            File output = new File(temporary.newFolder(), "output.apk");
+            boolean overlay = policy != WrapperOptions.HTTP_ORIGINAL;
+            WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(), false, null,
+                    new WrapperOptions(policy, overlay), ignored -> {}, new PackControl((stage, done, total) -> {}));
+            assertTrue(new ApkVerifier.Builder(output).setMinCheckedPlatformVersion(28).build().verify().isVerified());
+            try (ZipFile zip = new ZipFile(output)) {
+                assertArrayEquals(Files.readAllBytes(input.toPath()), zip.getInputStream(zip.getEntry(WrapperConfig.APK_PATH)).readAllBytes());
+                for (String path : List.of(WrapperConfig.CONFIG_PATH, "assets/npatch/config.json")) {
+                    var json = com.google.gson.JsonParser.parseString(new String(zip.getInputStream(zip.getEntry(path)).readAllBytes(),
+                            java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+                    assertEquals(policy, json.get("httpPolicy").getAsInt());
+                    assertEquals(overlay, json.get("requestOverlayPermission").getAsBoolean());
+                }
+            }
+        }
+    }
+
+    private static byte[] capabilitiesManifest() throws IOException {
+        AxmlWriter writer = new AxmlWriter();
+        writer.ns("android", NS, 0);
+        NodeVisitor root = writer.child(null, "manifest");
+        root.attr(null, "package", -1, NodeVisitor.TYPE_STRING, "example.original");
+        for (String tag : List.of("uses-permission", "uses-permission", "uses-permission-sdk-23")) {
+            NodeVisitor permission = root.child(null, tag);
+            str(permission, "name", 0x01010003, tag.equals("uses-permission-sdk-23")
+                    ? "android.permission.INTERNET" : "android.permission.SYSTEM_ALERT_WINDOW");
+            permission.attr(NS, "maxSdkVersion", 0x01010271, NodeVisitor.TYPE_FIRST_INT, 22);
+            permission.end();
+        }
+        NodeVisitor app = root.child(null, "application");
+        app.attr(NS, "usesCleartextTraffic", 0x010104ec, NodeVisitor.TYPE_INT_BOOLEAN, true);
+        app.attr(NS, "networkSecurityConfig", 0x01010527, NodeVisitor.TYPE_REFERENCE, 0x7f030001);
+        app.end(); root.end();
+        return writer.toByteArray();
+    }
 
     @Test public void zipStorageStaysInsideTaskDirectory() throws Exception {
         File input = new File(temporary.getRoot(), "temp-scope.apk");

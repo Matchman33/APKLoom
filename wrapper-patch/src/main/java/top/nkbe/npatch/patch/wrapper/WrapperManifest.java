@@ -14,6 +14,7 @@ import pxb.android.axml.AxmlVisitor;
 import pxb.android.axml.AxmlWriter;
 import pxb.android.axml.NodeVisitor;
 import top.nkbe.npatch.share.WrapperConfig;
+import top.nkbe.npatch.share.WrapperOptions;
 
 public final class WrapperManifest {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
@@ -95,7 +96,14 @@ public final class WrapperManifest {
     }
 
     public byte[] rewrite(String wrapperPackage, String npatchMetadata) throws IOException {
+        return rewrite(wrapperPackage, npatchMetadata, WrapperOptions.DEFAULT);
+    }
+
+    public byte[] rewrite(String wrapperPackage, String npatchMetadata, WrapperOptions options) throws IOException {
         validatePackage(wrapperPackage);
+        Set<String> requiredPermissions = new java.util.LinkedHashSet<>();
+        if (options.httpPolicy == WrapperOptions.HTTP_ALLOW) requiredPermissions.add("android.permission.INTERNET");
+        if (options.requestOverlayPermission) requiredPermissions.add("android.permission.SYSTEM_ALERT_WINDOW");
         Map<String, String> permissions = new HashMap<>();
         for (Node child : root.children) {
             if (child.name.equals("permission") || child.name.equals("permission-group") || child.name.equals("permission-tree")) {
@@ -107,11 +115,12 @@ public final class WrapperManifest {
         AxmlWriter writer = new AxmlWriter();
         for (Namespace ns : namespaces) writer.ns(ns.prefix, ns.uri, ns.line);
         if (namespaces.stream().noneMatch(ns -> ANDROID.equals(ns.uri))) writer.ns("android", ANDROID, 0);
-        write(root, writer, wrapperPackage, permissions, npatchMetadata);
+        write(root, writer, wrapperPackage, permissions, npatchMetadata, options, requiredPermissions);
         return writer.toByteArray();
     }
 
-    private void write(Node node, NodeVisitor parent, String target, Map<String, String> permissions, String npatchMetadata) throws IOException {
+    private void write(Node node, NodeVisitor parent, String target, Map<String, String> permissions,
+                       String npatchMetadata, WrapperOptions options, Set<String> requiredPermissions) throws IOException {
         NodeVisitor output = parent.child(node.ns, node.name);
         output.line(node.line);
         boolean manifest = node.name.equals("manifest");
@@ -123,6 +132,8 @@ public final class WrapperManifest {
             if (ANDROID.equals(attr.ns)) {
                 if (sdk && attr.name.equals("minSdkVersion")) continue;
                 if (application && Set.of("appComponentFactory", "hasCode", "extractNativeLibs").contains(attr.name)) continue;
+                if (application && attr.name.equals("usesCleartextTraffic")
+                        && options.httpPolicy != WrapperOptions.HTTP_ORIGINAL) continue;
                 if (value instanceof String text) {
                     if ((COMPONENTS.contains(node.name) && attr.name.equals("name")) || CLASS_ATTRIBUTES.contains(attr.name)) {
                         value = className(text, packageName);
@@ -146,6 +157,10 @@ public final class WrapperManifest {
         }
         if (sdk) output.attr(ANDROID, "minSdkVersion", 0x0101020c, TYPE_INT, minSdk);
         if (application) {
+            if (options.httpPolicy != WrapperOptions.HTTP_ORIGINAL) {
+                output.attr(ANDROID, "usesCleartextTraffic", 0x010104ec, NodeVisitor.TYPE_INT_BOOLEAN,
+                        options.httpPolicy == WrapperOptions.HTTP_ALLOW);
+            }
             output.attr(ANDROID, "appComponentFactory", 0x0101057a, NodeVisitor.TYPE_STRING, WrapperConfig.FACTORY);
             output.attr(ANDROID, "hasCode", 0x0101000c, NodeVisitor.TYPE_INT_BOOLEAN, true);
             output.attr(ANDROID, "extractNativeLibs", 0x010104ea, NodeVisitor.TYPE_INT_BOOLEAN, true);
@@ -169,7 +184,20 @@ public final class WrapperManifest {
             added.attr(ANDROID, "minSdkVersion", 0x0101020c, TYPE_INT, minSdk);
             added.end();
         }
-        for (Node child : node.children) write(child, output, target, permissions, npatchMetadata);
+        if (manifest) {
+            for (String permission : requiredPermissions) {
+                NodeVisitor added = output.child(null, "uses-permission");
+                added.attr(ANDROID, "name", 0x01010003, NodeVisitor.TYPE_STRING, permission);
+                added.end();
+            }
+        }
+        for (Node child : node.children) {
+            // Replace enabled capabilities with one unrestricted declaration, including
+            // legacy sdk-23 declarations and permissions capped below the device API.
+            if (manifest && child.name.startsWith("uses-permission")
+                    && requiredPermissions.contains(child.string(ANDROID, "name", ""))) continue;
+            write(child, output, target, permissions, npatchMetadata, options, requiredPermissions);
+        }
         for (Text text : node.texts) output.text(text.line, text.value);
         output.end();
     }

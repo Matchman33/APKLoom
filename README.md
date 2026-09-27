@@ -1,66 +1,67 @@
 # APK Loom
 
-## 简介
+无需 Root 的 APK 封装工具，提供 Android 管理器和命令行工具。
 
-APK Loom 是一个无需 Root 的独立 APK 封装工具。它将未修改的原 APK、加载器和运行时组合为一个可安装的 APK，并可按次加入 Frida Gadget。
+## 目标与特点
 
-底层基于 NPatch 运行时，继续使用其 MetaLoader、Vector/LSPosed 与 LSPlant 链路。上游项目官网：[npatch.nkbe.top](https://npatch.nkbe.top)，上游指南、架构说明和发布信息以官网为准。
+将单个 APK 生成为可安装、独立运行的应用，按需配置网络访问、悬浮窗权限和调试功能。
 
-管理器可选择本地 APK 或已安装应用，将原包保存到 `assets/base.apk`，再由 NPatch 运行时加载原包代码和资源。详细构建、兼容范围和使用说明见 [APK Loom 文档](WRAPPER.md)。
+- 从本地 APK 或已安装应用生成安装包。
+- 保留原图标、应用名称和完整原包，支持修改包名及输出文件名。
+- 支持 HTTP 访问策略、悬浮窗授权引导和可选原签名兼容。
+- 支持按次添加 Frida Gadget，选择监听或脚本模式。
+- 生成后可导出、安装、打开或分享，运行时无需管理器常驻。
 
-品牌源文件和 Android 图标预览见 [`branding`](branding) 目录。交错的两层方框分别表示原应用与外层运行时。
+## 使用要求
 
-为了保持已安装管理器可直接升级以及既有封装格式兼容，Android `applicationId`、Java/Kotlin 包名、`assets/npatch` 和 `libnpatch.so` 暂时保留原技术名称。这些名称不再作为产品品牌展示。
+- Android 9 及以上，ARM64 或 x86_64 设备及应用。
+- 输入需为完整的单个 APK；不支持分包、32 位应用、sharedUserId 或隔离进程应用。
+- 命令行工具需要 JDK 21。
 
-## 支持版本
+## 手机上使用
 
-- 最低版本：Android 9。
-- 最高版本：理论上与 [JingMatrix/LSPosed](https://github.com/JingMatrix/LSPosed#supported-versions) 相同，具体兼容性仍以真机验证为准。
-- 当前独立封装构建提供 ARM64 和 x86_64 运行时。
+1. 安装 APK Loom 管理器，点击“选择 APK”或“已安装应用”。
+2. 确认包名和文件名，按需调整下表中的选项。
+3. 点击“生成 APK”，等待任务完成。
+4. 点击“导出”保存文件，或点击“安装”；系统要求时允许安装未知应用。
+5. 安装后点击“打开”，也可通过桌面图标启动。
 
-## 构建与使用
+| 选项 | 用法 |
+| --- | --- |
+| 包名 | 默认保留原包名；需要与原应用共存时设置不同包名，部分应用可能不兼容 |
+| 原签名兼容 | 默认关闭；需要兼容应用内签名检查时开启，不改变安装包的实际签名 |
+| HTTP 访问 | 默认保持原设置；可选择允许或禁止明文 HTTP，HTTPS 证书校验保持不变 |
+| 申请悬浮窗权限 | 默认关闭；开启后首次启动提示前往系统设置授权，可跳过，之后不重复提示 |
+| Frida Gadget | 默认关闭；开启后选择本地 Gadget 文件，详见 [Gadget 使用](gadget/README.md) |
 
-本地构建要求：
+同包名但签名不同的 APK 不能直接覆盖安装。请使用匹配的签名，或尝试修改包名。
+HTTP 选项适用于遵循 Android 网络策略的请求，不能拦截所有原生网络请求。关闭悬浮窗选项不会移除原应用已有的权限。
 
-- Git 子模块必须完整检出，首次构建前执行 `git submodule update --init --recursive`。
-- 使用完整的 JDK 21；可通过 `./gradlew --version` 或 `.\gradlew.bat --version` 确认 `Daemon JVM` 为 21。
-- Android SDK 需要安装 Platform 37.0、Build Tools 37.0.0、NDK 29.0.13846066 和 CMake 3.31.6，并接受相应 SDK 许可证。
-- 推荐设置 `ANDROID_HOME`。如果改用 `local.properties`，根目录和 `core` 目录都必须配置 `sdk.dir`，因为 `core` 是独立的 Gradle included build。
+导出时若系统文件选择器不可用，文件保存到 `Download/ApkLoom`。修改选项后需重新生成 APK；需要保留的结果请先导出。
 
-完整的环境配置与排错说明见 [封装管理器文档](WRAPPER.md#构建)。
+## 构建
 
-独立封装管理器的推荐构建命令：
+准备 JDK 21、Android SDK Platform 37.0、Build Tools 37.0.0、NDK 29.0.13846066、CMake 3.31.6，并设置 `JAVA_HOME`、`ANDROID_HOME`。
+
+在仓库根目录执行：
 
 ```powershell
-.\gradlew.bat -PstandaloneWrapper=true -PallowDebugSigning=true :wrapper-manager:collectReleaseArtifacts :wrapper-manager:testDebugUnitTest :wrapper-patch:test :patch-loader:testDebugUnitTest
+git submodule update --init --recursive
+.\gradlew.bat -PstandaloneWrapper=true -PallowDebugSigning=true :wrapper-manager:collectReleaseArtifacts
 ```
 
-主要产物：
+产物位于 `out/releases/<版本>-local/`，包括管理器 APK、CLI JAR 和校验文件。`-local` 为本机 Debug 签名的测试版。
+完整环境配置、测试命令和正式签名见 [构建与命令行指南](WRAPPER.md)。
 
-- Android 管理器：`wrapper-manager/build/outputs/apk/release/wrapper-manager-release.apk`
-- 命令行工具：`out/wrapper/apkloom-cli.jar`
-- 本地校验包与校验文件：`out/releases/1.0.7-local/`。`-local` 表示使用本机 Debug 签名，不应作为正式版本发布。
+## 命令行
 
-正式构建须配置固定签名密钥并去掉 `-PallowDebugSigning=true`；缺少签名会使构建失败。
-版本号在 `gradle.properties` 中显式维护，已不依赖远端分支提交数。
-签名配置及 CI 说明见 [发布构建](WRAPPER.md#发布构建)。
+```powershell
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output-options --http allow --request-overlay
+```
 
-传统 NPatch 使用方式：
+输出保留输入文件名，目标文件不能已存在。更多参数见 [命令行用法](WRAPPER.md#命令行用法)。
 
-- Jar：下载 `npatch.jar`，执行 `java -jar npatch.jar`。
-- 管理器：在 Android 设备上安装 `manager.apk`，按照应用内指引操作。
+## 许可证与致谢
 
-## 上游下载
-
-- 稳定版：[GitHub Releases](https://github.com/7723mod/NPatch/releases)
-- 测试构建：[GitHub Actions](https://github.com/7723mod/NPatch/actions)
-
-## 致谢
-
-- [LSPosed](https://github.com/JingMatrix/LSPosed)：核心框架。
-- [Xpatch](https://github.com/WindySha/Xpatch)：分支来源。
-- [Apkzlib](https://android.googlesource.com/platform/tools/apkzlib)：APK 重打包工具。
-
-## 许可证
-
-APK Loom 基于 NPatch，按 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html) 发布。修改或分发时需要保留相应许可证和版权说明。
+基于 NPatch，遵循 [GNU GPL v3](LICENSE)。感谢 NPatch、LSPosed、Xpatch 和 Apkzlib 项目。

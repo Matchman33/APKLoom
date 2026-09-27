@@ -302,6 +302,11 @@ public class LSPApplication {
         Startup.initXposed(false, ActivityThread.currentProcessName(), context.getApplicationInfo().dataDir, service);
         Startup.bootstrapXposed(false);
 
+        if (config.standalone) {
+            WrapperHttpPolicy.install(config.httpPolicy);
+            if (config.requestOverlayPermission) OverlayPermissionPrompt.install();
+        }
+
         if (config.standalone && config.originalPackage != null
                 && !config.originalPackage.equals(config.newPackage)) {
             ResourcePackageCompat.install(config.originalPackage, config.newPackage);

@@ -32,6 +32,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import top.nkbe.npatch.share.WrapperConfig;
+import top.nkbe.npatch.share.WrapperOptions;
 import top.nkbe.npatch.share.Constants;
 import top.nkbe.npatch.share.PatchConfig;
 
@@ -65,6 +66,15 @@ public final class WrapperPacker {
     public static void pack(File input, File output, String targetPackage, byte[] loaderDex,
                             KeyStore.PrivateKeyEntry signer, byte[] runtimeZip, boolean signatureCompat,
                             WrapperGadget gadget, Consumer<String> log, PackControl control) throws Exception {
+        pack(input, output, targetPackage, loaderDex, signer, runtimeZip, signatureCompat, gadget,
+                WrapperOptions.DEFAULT, log, control);
+    }
+
+    public static void pack(File input, File output, String targetPackage, byte[] loaderDex,
+                            KeyStore.PrivateKeyEntry signer, byte[] runtimeZip, boolean signatureCompat,
+                            WrapperGadget gadget, WrapperOptions capabilities, Consumer<String> log,
+                            PackControl control) throws Exception {
+        java.util.Objects.requireNonNull(capabilities, "capabilities");
         control.report(PackControl.Stage.PREPARING, 0, -1);
         if (input.getCanonicalFile().equals(output.getCanonicalFile())) throw new IOException("Output must not overwrite the input APK");
         if (!input.isFile()) throw new IOException("Input APK not found");
@@ -97,6 +107,8 @@ public final class WrapperPacker {
             originalSignature = encoded.toString();
         }
         config.signatureCompat = signatureCompat;
+        config.httpPolicy = capabilities.httpPolicy;
+        config.requestOverlayPermission = capabilities.requestOverlayPermission;
         config.hookRuntime = WrapperConfig.HOOK_RUNTIME;
         config.gadgetEnabled = gadget != null;
         config.gadgetAbi = gadget == null ? null : gadget.abi();
@@ -116,13 +128,21 @@ public final class WrapperPacker {
         npatch.standalone = true;
         npatch.embeddedApkSha256 = config.apkSha256;
         npatch.originalPackage = manifest.packageName;
+        npatch.httpPolicy = capabilities.httpPolicy;
+        npatch.requestOverlayPermission = capabilities.requestOverlayPermission;
         byte[] npatchBytes = new Gson().toJson(npatch).getBytes(StandardCharsets.UTF_8);
-        byte[] rewritten = manifest.rewrite(targetPackage, java.util.Base64.getEncoder().encodeToString(npatchBytes));
+        byte[] rewritten = manifest.rewrite(targetPackage, java.util.Base64.getEncoder().encodeToString(npatchBytes), capabilities);
         byte[] configBytes = new Gson().toJson(config).getBytes(StandardCharsets.UTF_8);
         File workDir = Files.createTempDirectory(parent.toPath(), "wrapper-work-").toFile();
         File temporary = new File(workDir, "result.apk");
         try {
             log.accept("Building " + targetPackage);
+            log.accept("HTTP policy: " + switch (capabilities.httpPolicy) {
+                case WrapperOptions.HTTP_ALLOW -> "allow";
+                case WrapperOptions.HTTP_BLOCK -> "block";
+                default -> "original";
+            });
+            if (capabilities.requestOverlayPermission) log.accept("Overlay permission: declare and prompt once at launch");
             if (packageRenamed) log.accept("Rewriting resource package namespace for " + targetPackage);
             ZFileOptions options = new ZFileOptions().setStorageFactory(new ChunkBasedByteStorageFactory(
                     new OverflowToDiskByteStorageFactory(8L * 1024 * 1024, () -> TemporaryDirectory.fixed(workDir))))

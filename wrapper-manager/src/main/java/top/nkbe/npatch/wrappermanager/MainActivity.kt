@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import top.nkbe.npatch.share.WrapperOptions
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -221,6 +222,34 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
+                }
+                HorizontalDivider()
+                Text(stringResource(R.string.network_permissions), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.http_policy), style = MaterialTheme.typography.titleSmall)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    val policies = listOf(
+                        WrapperOptions.HTTP_ORIGINAL to R.string.http_original,
+                        WrapperOptions.HTTP_ALLOW to R.string.http_allow,
+                        WrapperOptions.HTTP_BLOCK to R.string.http_block,
+                    )
+                    policies.forEachIndexed { index, (policy, label) ->
+                        SegmentedButton(selected = state.httpPolicy == policy, onClick = { model.httpPolicy(policy) },
+                            shape = SegmentedButtonDefaults.itemShape(index, policies.size), enabled = !state.busy) {
+                            Text(stringResource(label))
+                        }
+                    }
+                }
+                Text(stringResource(R.string.http_policy_desc), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(stringResource(R.string.overlay_permission))
+                        Text(stringResource(R.string.overlay_permission_desc), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = state.requestOverlayPermission, onCheckedChange = model::requestOverlayPermission,
+                        enabled = !state.busy)
                 }
                 Button(onClick = model::generate, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.Build, contentDescription = null, modifier = Modifier.padding(end = 8.dp))

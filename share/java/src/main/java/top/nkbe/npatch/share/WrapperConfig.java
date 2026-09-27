@@ -21,6 +21,8 @@ public final class WrapperConfig {
     public String appComponentFactory;
     public String apkSha256;
     public boolean signatureCompat;
+    public int httpPolicy;
+    public boolean requestOverlayPermission;
     public String hookRuntime;
     public boolean gadgetEnabled;
     public String gadgetAbi;

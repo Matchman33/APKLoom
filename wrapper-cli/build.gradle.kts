@@ -7,6 +7,7 @@ java {
 
 dependencies {
     implementation(projects.wrapperPatch)
+    implementation(projects.share.java)
     implementation(npatch.beust.jcommander)
 }
 

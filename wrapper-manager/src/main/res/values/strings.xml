@@ -19,6 +19,14 @@
     <string name="renamed_package_warning">Changing the package name may break SDKs that look up resources by package name.</string>
     <string name="filename">APK filename</string>
     <string name="generate">Generate APK</string>
+    <string name="network_permissions">Network and permissions</string>
+    <string name="http_policy">HTTP access</string>
+    <string name="http_original">Original</string>
+    <string name="http_allow">Allow</string>
+    <string name="http_block">Block</string>
+    <string name="http_policy_desc">Controls unencrypted HTTP for apps using Android network policy. HTTPS certificate checks are unchanged. Native sockets may not follow this setting.</string>
+    <string name="overlay_permission">Request overlay permission</string>
+    <string name="overlay_permission_desc">Adds the permission and prompts once when the generated app opens. You can grant access in system settings or skip. Turning this off preserves any permission already in the original app.</string>
     <string name="signature_compat">Original signature compatibility</string>
     <string name="enable_gadget">Enable Frida Gadget</string>
     <string name="select_gadget">Select local Gadget</string>

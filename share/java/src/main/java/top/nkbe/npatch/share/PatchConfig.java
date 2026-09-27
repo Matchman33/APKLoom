@@ -4,6 +4,8 @@ public class PatchConfig {
     public boolean standalone;
     public String embeddedApkSha256;
     public String originalPackage;
+    public int httpPolicy;
+    public boolean requestOverlayPermission;
 
     public final boolean useManager;
     public final boolean debuggable;

@@ -1,29 +1,10 @@
-# APK Loom
+# 构建与命令行指南
 
-APK Loom 使用 NPatch 运行时：MetaLoader → libnpatch → LSPApplication → Vector/LSPosed → LSPlant。Pine 和此前单独实现的 WrapperComponentFactory 已移除，wrapper-loader 只负责收集原框架构建产物。
+手机上的操作步骤见 [使用指南](README.md#手机上使用)。以下命令在仓库根目录执行。
 
-保留选择 APK/已安装应用、原图标与名称、原文件名、原包嵌入 `assets/base.apk` 的功能。默认保留原包名，运行时代码和资源均从校验后的原包缓存加载。显式改名时重写外层资源表包名称空间，代码来自原包、资源来自外层，并兼容新旧包名的动态资源查询。不需要手机另外安装 Xposed 或 Root；框架随生成物携带。
+## 配置环境
 
-## 构建
-
-APK Loom 也会构建 NPatch 原生运行时，已不再是免 NDK 的构建路径。本地构建需要：
-
-- 完整的 JDK 21，不能只安装 JRE。Gradle 的 `Daemon JVM` 必须是 21，JDK 17 会产生“无效的源发行版：21”错误。
-- Android SDK Platform 37.0（包名 `platforms;android-37.0`）。
-- Android SDK Build Tools 37.0.0。
-- Android NDK 29.0.13846066。
-- CMake 3.31.6。
-- Git 及完整的递归子模块。
-
-首次获取源码时使用递归克隆，或在已有工作区补齐全部子模块：
-
-```powershell
-git clone --recursive <repository-url>
-# 已经克隆仓库时执行：
-git submodule update --init --recursive
-```
-
-推荐先设置 `JAVA_HOME` 和 `ANDROID_HOME`，以便根构建和 `core` included build 使用相同环境：
+安装 Git、完整的 JDK 21 和 Android SDK Command-line Tools，并设置路径：
 
 ```powershell
 $env:JAVA_HOME = "<JDK 21 安装目录>"
@@ -31,137 +12,84 @@ $env:ANDROID_HOME = "<Android SDK 目录>"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:Path"
 
+git submodule update --init --recursive
 .\gradlew.bat --version
 ```
 
-`gradlew --version` 输出中的 `Daemon JVM` 应为 21。然后通过 Android Studio SDK Manager 安装上述组件，或使用命令行工具：
+确认输出中的 `Daemon JVM` 为 21。安装 SDK 组件并接受许可证：
 
 ```powershell
 & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" --licenses
 & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" `
-  "platforms;android-37.0" `
-  "build-tools;37.0.0" `
-  "ndk;29.0.13846066" `
-  "cmake;3.31.6"
+  "platforms;android-37.0" "build-tools;37.0.0" `
+  "ndk;29.0.13846066" "cmake;3.31.6"
 ```
 
-如果不设置 `ANDROID_HOME`，则必须同时创建根目录的 `local.properties` 和 `core/local.properties`。两个文件内容相同，例如：
+也可在 Android Studio SDK Manager 中安装相同版本。若不设置 `ANDROID_HOME`，在根目录和 `core/` 下分别创建 `local.properties`，写入同一个 SDK 路径，例如 `sdk.dir=D:/Sdk`。
 
-```properties
-sdk.dir=D:/Sdk
-```
+## 构建与测试
 
-只配置根目录的 `local.properties` 不够，因为 `core` 通过 `includeBuild("core")` 作为独立 Gradle 构建运行。完成环境配置后执行：
+构建本地测试版并运行单元测试：
 
 ```powershell
-.\gradlew.bat -PstandaloneWrapper=true -PallowDebugSigning=true :wrapper-manager:collectReleaseArtifacts :wrapper-manager:testDebugUnitTest :wrapper-patch:test :patch-loader:testDebugUnitTest
+.\gradlew.bat -PstandaloneWrapper=true -PallowDebugSigning=true `
+  :wrapper-manager:collectReleaseArtifacts `
+  :wrapper-manager:testDebugUnitTest :wrapper-patch:test :patch-loader:testDebugUnitTest
 ```
 
-libxposed 源码子模块不可用时，core 的两个 Gradle 项目回退到官方 Maven Central 的 API/service/interface 102.0.0；这些是原框架的 API 依赖，不是其他 Hook 引擎。
+macOS/Linux 将 `.\gradlew.bat` 换为 `./gradlew`，使用对应的环境变量语法；首次执行前运行 `chmod +x gradlew`。
 
-- 管理器：`wrapper-manager/build/outputs/apk/release/wrapper-manager-release.apk`
-- CLI：`out/wrapper/apkloom-cli.jar`
-- 引导：`meta-loader` 原始入口 `LSPAppComponentFactoryStub`
-- 运行时：`patch-loader` 的 `loader.bin` 及 ARM64/x86_64 `libnpatch.so`
-
-## 使用
-
-```powershell
-java -jar out/wrapper/apkloom-cli.jar example.apk -o output
-java -jar out/wrapper/apkloom-cli.jar example.apk -o output-signature --signature-compat
-```
-
-默认输出包名与原包相同。显式 `-p` 可改包名，外层资源表会同步更新并兼容新旧包名动态查询；硬编码包名或渠道 SDK 仍可能不兼容。`getPackageName()` 返回真实的新包名。
-
-本地 APK 保留输入文件名，已安装应用默认导出为“应用名称.apk”。保留图标和多语言名称。生成、导出和安装分开，禁止覆盖原始输入文件。
-
-系统文件创建器不可用时，管理器会回退导出到 `Download/ApkLoom`。为保持管理器升级和封装格式兼容，应用包名以及 `assets/npatch`、`libnpatch.so` 等运行时名称继续保留。
-
-**同包名不代表同签名。** 默认外层仍使用 NPatch 内置签名；原版若使用不同证书，就不能直接覆盖安装，也不能在同一用户空间以同包名共存。管理器允许先生成和导出，但会阻止已知签名冲突的安装，不自动卸载应用或清除数据；打开操作也不会把原版当作已安装的封装版本。
-
-## 运行策略
-
-- 完整原包固定在 `assets/base.apk`，生成后核对 SHA-256。
-- `assets/npatch/config.json` 使用原 PatchConfig，并记录独立封装模式及原包摘要；Manifest 的 npatch 元数据保持原框架格式。
-- 独立封装模式强制准备原包缓存，重新建立 LoadedApk，让代码和资源配套。保留原框架组件工厂回退和原生库准备逻辑。
-- 原包缓存使用锁、摘要检查、只读文件和原子发布，继续识别旧 NPatch 的 `assets/npatch/origin.apk` 布局。
-- 原包提取时同步计算 SHA-256，缓存命中仍进行完整摘要校验。活跃进程持有代际锁，清理只回收未使用的旧摘要文件。
-- 保持原包名的独立封装中，宿主应用通过 `ApplicationInfo.sourceDir`、`getPackageCodePath()` 和 Java `File` 路径接口看到校验后的原包缓存；NPatch 模块调用方仍看到包含注入资产的外层 APK。该规则不按 Android 版本分支。
-- 独立封装模式关闭管理器依赖、模块发现和模块加载，但保留 Vector/LSPosed 框架初始化。
-- 原签名兼容开关默认关闭；开启时使用原 NPatch 的 SIGBYPASS_EXTREME（等级 3），不再使用 Pine 查询替换。
-- 不修改 `assets/base.apk` 字节；可选 Frida Gadget 只作为外层运行时资产显式加载，不会写入内层原包。该能力不保证通过目标应用或服务端的所有完整性校验。
-- 当前原框架构建提供 ARM64 和 x86_64，32 位应用不在本构建支持范围内。分包、sharedUserId、isolatedProcess 等仍在输入阶段拒绝。
-- 同时保留外层资源副本和完整原包，大型 APK 仍有明显体积与 I/O 成本，尚未使用 NestedZip 去重。
-
-## 任务与存储
-
-- 多个管理器窗口共享一个进程级任务，同一时间只执行一个导入、生成或导出操作。
-- 长操作使用前台服务和通知，可在页面或通知中取消。第三方签名和 ZIP 写入的部分步骤只能在阶段边界响应取消。
-- 进程退出后不自动恢复未完成的输入流；下一次启动清理没有活跃锁的历史会话。
-- 当前 APK、选项与最新输出保留在缓存会话中。切换输入、修改参数或重新生成时删除失效输出；已导出到公共目录的文件不自动删除。
-- ZIP 中间文件放入任务目录，取消或失败后清理；异常终止留下的文件由后续会话清理接管。
-- 生成前按照 ZIP 条目、解压后的 SO、运行时和溢写文件估算空间；这不是固定的“三倍原包大小”。复制时继续检查剩余空间。
-- 缓存由 Android 管理，用户清缓存或系统回收后需要重新选择 APK。导出到文档提供方失败或取消时，提供方可能保留部分目标文件，请重新导出。
-- 首次使用时可在系统设置允许通知，以便在通知栏查看进度和取消任务。
-
-## 发布构建
-
-`gradle.properties` 中的 `apkLoomVersionCode` 和 `apkLoomVersionName` 是版本来源。
-正式发布时手动递增版本号；不能依赖 Git fetch 或提交数量改变安装版本。
-
-正式管理器必须提供以下环境变量，也支持对应的 Gradle 属性：
-
-| 环境变量 | Gradle 属性 |
+| 产物 | 路径 |
 | --- | --- |
-| `ANDROID_STORE_FILE` | `androidStoreFile` |
-| `ANDROID_STORE_PASSWORD` | `androidStorePassword` |
-| `ANDROID_KEY_ALIAS` | `androidKeyAlias` |
-| `ANDROID_KEY_PASSWORD` | `androidKeyPassword` |
+| 管理器 APK | `wrapper-manager/build/outputs/apk/release/wrapper-manager-release.apk` |
+| CLI JAR | `out/wrapper/apkloom-cli.jar` |
+| 测试版产物与校验文件 | `out/releases/<版本>-local/` |
 
-配置后运行：
+版本取自 `gradle.properties`。产物目录包含 `SHA256SUMS.txt` 和 `BUILD.txt`。
+
+## 正式签名
+
+在 `gradle.properties` 中设置 `apkLoomVersionName`，并递增 `apkLoomVersionCode`。配置以下环境变量后构建：
+
+| 环境变量 | 内容 |
+| --- | --- |
+| `ANDROID_STORE_FILE` | 签名密钥文件路径 |
+| `ANDROID_STORE_PASSWORD` | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 密钥密码 |
 
 ```powershell
 .\gradlew.bat -PstandaloneWrapper=true :wrapper-manager:collectReleaseArtifacts
 ```
 
-固定发布密钥请在仓库外备份，不能提交到 Git。正式密钥与之前的 Debug 证书不同，旧测试版可能无法直接覆盖升级，需要先导出所需结果再处理安装。
-管理器发布签名与生成外层 APK 所用的 NPatch 内置签名是两套用途不同的配置。
+正式产物位于 `out/releases/<版本>/`。更新已安装的管理器时应使用相同签名；签名密钥保存在仓库外。
 
-仅做本地验证时显式加入 `-PallowDebugSigning=true`。产物版本名带 `-local`，目录为
-`out/releases/<版本>-local/`；正式包位于 `out/releases/<版本>/`。
-目录中包含管理器 APK、CLI JAR、`SHA256SUMS.txt` 和记录提交/工作区状态的 `BUILD.txt`。
-管理器 Release 构建会执行 lint。
+GitHub Actions 构建正式版本时，配置 `KEY_STORE`（Base64 密钥文件）、`KEY_STORE_PASSWORD`、`ALIAS`、`KEY_PASSWORD` 四项 Secrets，并推送与版本名一致的 `v<版本>` 标签。构建产物从 Actions 的 Artifacts 下载。
 
-GitHub Actions 使用 APK Loom 专用构建。普通提交生成本地签名验证包；推送 `v<版本>` 标签时要求
-标签与版本名一致，并读取 `KEY_STORE`（Base64 JKS/PKCS12）、`KEY_STORE_PASSWORD`、`ALIAS`、
-`KEY_PASSWORD` 四项仓库 Secrets。工作流执行测试、lint、签名和摘要验证，上传产物但不自动发布 Release。
-
-本地摘要 I/O 测量：
+## 命令行用法
 
 ```powershell
-java scripts/OriginCopyBenchmark.java 128
+# 基本封装
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output
+
+# 允许 HTTP，并在首次打开时提示悬浮窗授权
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output-options --http allow --request-overlay
+
+# 修改包名并启用原签名兼容
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output-renamed -p example.wrapped --signature-compat
+
+# 查看全部参数
+java -jar out/wrapper/apkloom-cli.jar --help
 ```
 
-该测量只比较电脑上的独立读取与同步摘要，不能代替 Android 冷启动、前台服务和 ROM 兼容测试。
+| 参数 | 用法 |
+| --- | --- |
+| `-o` / `--output` | 必填，输出目录；保留输入 APK 文件名，不覆盖已有文件 |
+| `-p` / `--package` | 指定生成应用的包名，默认保持原包名 |
+| `--http` | `original` 保持原设置（默认）、`allow` 允许、`block` 禁止明文 HTTP |
+| `--request-overlay` | 添加悬浮窗权限并在首次打开时提示授权 |
+| `--signature-compat` | 启用应用内原签名兼容，不改变 APK 实际签名 |
+| `--keystore` / `--store-type` / `--alias` | 指定生成 APK 的签名密钥、密钥库类型（默认 BKS）和别名 |
+| `--store-password-env` / `--key-password-env` | 保存密码的环境变量名；不指定密钥密码时使用密钥库密码 |
 
-## Frida Gadget
-
-Gadget 改为每次生成 APK 时选择，不再作为管理器的构建时资产。选择目标 APK 后开启“启用 Frida Gadget”，再选择本地官方 Gadget `.so`；管理器会自动识别 ARM64 或 x86_64。详细流程见 [Gadget 运行时说明](gadget/README.md)。
-
-管理器提供 Listen/Script 模式选择。Listen 模式可设置地址、端口和启动时是否等待客户端；Script 模式选择任意本地 UTF-8 JavaScript 文件。封装后内部名称固定为 `libnpatch-gadget.so`、`libnpatch-gadget.config.so` 和 `libscript.so`，配置文件由管理器生成。
-
-关闭开关时，本次生成物不会包含 Gadget。开启后，运行时只在应用主进程提取并显式执行 `System.load()`；Script 模式缺少脚本、文件不是支持的 64 位 ELF、端口无效或脚本不是 UTF-8 时会拒绝生成。
-
-## 验证边界
-
-已使用官方 Frida 17.18.0 Android ARM64 Gadget 完成本地构建、实际 APK 封装和 Android 15 ARM64 真机 Script 模式验收。脚本在首次启动和不重装冷启动时均实际执行，Gadget 保持映射，smoke 自检全部通过。Listen 外部连接和具体目标应用兼容性仍需分别验证，不能据此宣称游戏登录或完整性校验已修复。
-
-旧版独立加载器/Pine 的测试记录属于历史版本，不能当作本版 NPatch 运行时的设备验证。恢复设备测试后，先使用 example.npatch.smoke 样例检查代码/资源路径、组件、SO 和签名查询，再测试具体目标应用。
-
-本轮结果见 [NPatch 原体系本地验证](docs/testing/2026-09-23-npatch-runtime-local.md)。
-
-Gadget 结果见 [Frida Gadget 本地与真机验证](docs/testing/2026-09-23-frida-gadget-device.md)。
-
-管理器按次选择与配置结果见 [Frida Gadget 管理器按次配置验证](docs/testing/2026-09-24-gadget-manager-options.md)。
-
-同包名原包路径结果见 [Android 15 同包名原包路径回归](docs/testing/2026-09-24-android15-original-apk-path.md)。
+每次处理一个完整 APK。HTTP 和悬浮窗选项的限制见 [使用指南](README.md#手机上使用)；Gadget 参数见 [Gadget 使用](gadget/README.md)。
