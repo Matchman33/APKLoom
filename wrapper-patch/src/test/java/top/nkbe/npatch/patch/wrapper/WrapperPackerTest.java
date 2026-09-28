@@ -92,6 +92,55 @@ public class WrapperPackerTest {
         }
     }
 
+    @Test public void signedWrapperRewritesNetworkConfigInOuterApkOnly() throws Exception {
+        for (int policy : new int[] {WrapperOptions.HTTP_ORIGINAL, WrapperOptions.HTTP_ALLOW, WrapperOptions.HTTP_BLOCK}) {
+            File input = new File(temporary.getRoot(), "network-" + policy + ".apk");
+            byte[] xml = networkConfig();
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(input.toPath()))) {
+                entry(zip, "AndroidManifest.xml", capabilitiesManifest());
+                entry(zip, "res/xml/network_security_config.xml", xml);
+                entry(zip, "res/xml-v31/custom_network.xml", xml);
+            }
+            File output = new File(temporary.getRoot(), "network-wrapped-" + policy + ".apk");
+            WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(), false, null,
+                    new WrapperOptions(policy, false), ignored -> {}, new PackControl((stage, done, total) -> {}));
+            assertTrue(new ApkVerifier.Builder(output).setMinCheckedPlatformVersion(28).build().verify().isVerified());
+            try (ZipFile zip = new ZipFile(output)) {
+                for (String path : List.of("res/xml/network_security_config.xml", "res/xml-v31/custom_network.xml")) {
+                    byte[] outer = zip.getInputStream(zip.getEntry(path)).readAllBytes();
+                    if (policy == WrapperOptions.HTTP_ORIGINAL) assertArrayEquals(xml, outer);
+                    else assertTrue(attributes(outer).contains("base-config:cleartextTrafficPermitted="
+                            + (policy == WrapperOptions.HTTP_ALLOW)));
+                }
+                assertArrayEquals(Files.readAllBytes(input.toPath()),
+                        zip.getInputStream(zip.getEntry(WrapperConfig.APK_PATH)).readAllBytes());
+            }
+        }
+    }
+
+    @Test public void missingNetworkConfigFailsInsteadOfClaimingHttpIsAllowed() throws Exception {
+        File input = new File(temporary.getRoot(), "missing-network-config.apk");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(input.toPath()))) {
+            entry(zip, "AndroidManifest.xml", capabilitiesManifest());
+        }
+        File output = new File(temporary.getRoot(), "missing-network-config-wrapped.apk");
+        IOException error = assertThrows(IOException.class, () -> WrapperPacker.pack(input, output,
+                "example.original", loader(), testSigner(), runtime(), false, null,
+                new WrapperOptions(WrapperOptions.HTTP_ALLOW, false), ignored -> {},
+                new PackControl((stage, done, total) -> {})));
+        assertTrue(error.getMessage().contains("network security config XML not found"));
+        assertFalse(output.exists());
+    }
+
+    private static byte[] networkConfig() throws IOException {
+        AxmlWriter writer = new AxmlWriter();
+        NodeVisitor root = writer.child(null, "network-security-config");
+        NodeVisitor base = root.child(null, "base-config");
+        base.attr(null, "cleartextTrafficPermitted", -1, NodeVisitor.TYPE_INT_BOOLEAN, false);
+        base.end(); root.end();
+        return writer.toByteArray();
+    }
+
     private static byte[] capabilitiesManifest() throws IOException {
         AxmlWriter writer = new AxmlWriter();
         writer.ns("android", NS, 0);

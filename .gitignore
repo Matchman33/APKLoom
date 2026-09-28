@@ -19,6 +19,7 @@ libxposed
 .externalNativeBuild
 .cxx
 /out
+/apkloom-release.p12
 /.idea
 *.log
 .kotlin

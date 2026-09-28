@@ -28,6 +28,11 @@ public final class WrapperManifest {
     public final int minSdk;
     public final String appComponentFactory;
 
+    public boolean hasNetworkSecurityConfig() {
+        return root.children.stream().filter(n -> n.name.equals("application"))
+                .anyMatch(n -> n.attribute(ANDROID, "networkSecurityConfig") != null);
+    }
+
     public WrapperManifest(byte[] binaryXml) throws IOException {
         List<Node> roots = new ArrayList<>();
         new AxmlReader(binaryXml).accept(new AxmlVisitor() {
