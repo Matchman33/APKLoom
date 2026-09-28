@@ -26,7 +26,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v5
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: 安装固定 SDK 工具链
         run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;29.0.13846066' 'cmake;3.31.6'
       - name: 准备签名与版本
