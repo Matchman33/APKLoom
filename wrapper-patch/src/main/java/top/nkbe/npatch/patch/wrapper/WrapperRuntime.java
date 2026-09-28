@@ -17,14 +17,14 @@ final class WrapperRuntime {
     private static final int MAX_ARCHIVE_SIZE = 256 * 1024 * 1024;
     private static final int MAX_DEX_SIZE = 16 * 1024 * 1024;
     private static final int MAX_NATIVE_SIZE = 128 * 1024 * 1024;
-    private static final int MAX_TEXT_SIZE = 16 * 1024 * 1024;
+    private static final int MAX_DATA_SIZE = 16 * 1024 * 1024;
     private static final String[] SUPPORTED_ABIS = {"arm64-v8a", "x86_64"};
 
     private WrapperRuntime() {}
 
     static Map<String, byte[]> read(byte[] archive) throws IOException {
         Map<String, byte[]> result = readArchive(archive);
-        validateGadgets(result);
+        validateGadgets(result, false);
         return result;
     }
 
@@ -32,7 +32,7 @@ final class WrapperRuntime {
         Map<String, byte[]> result = readArchive(archive);
         result.keySet().removeIf(name -> name.startsWith(WrapperConfig.GADGET_PREFIX));
         if (gadget != null) result.putAll(gadget.entries());
-        validateGadgets(result);
+        validateGadgets(result, gadget != null && "custom".equals(gadget.mode()));
         return result;
     }
 
@@ -57,7 +57,7 @@ final class WrapperRuntime {
                     }
                 } else if (name.endsWith("libnpatch.so") || name.endsWith(WrapperConfig.GADGET_LIBRARY)) {
                     validateElf(name, bytes);
-                } else {
+                } else if (name.endsWith(WrapperConfig.GADGET_CONFIG)) {
                     decodeUtf8(name, bytes);
                 }
                 if (result.put(name, bytes) != null) throw new IOException("Duplicate Hook runtime entry: " + name);
@@ -70,14 +70,14 @@ final class WrapperRuntime {
         return result;
     }
 
-    private static void validateGadgets(Map<String, byte[]> runtime) throws IOException {
-        for (String abi : SUPPORTED_ABIS) validateGadgetBundle(runtime, abi);
+    private static void validateGadgets(Map<String, byte[]> runtime, boolean custom) throws IOException {
+        for (String abi : SUPPORTED_ABIS) validateGadgetBundle(runtime, abi, custom);
     }
 
     private static int entryLimit(String name) {
         if (name.equals("loader.bin")) return MAX_DEX_SIZE;
         if (name.endsWith(WrapperConfig.GADGET_CONFIG) || name.endsWith(WrapperConfig.GADGET_SCRIPT)) {
-            return MAX_TEXT_SIZE;
+            return MAX_DATA_SIZE;
         }
         return MAX_NATIVE_SIZE;
     }
@@ -110,7 +110,7 @@ final class WrapperRuntime {
         }
     }
 
-    private static void validateGadgetBundle(Map<String, byte[]> runtime, String abi) throws IOException {
+    private static void validateGadgetBundle(Map<String, byte[]> runtime, String abi, boolean custom) throws IOException {
         String prefix = WrapperConfig.GADGET_PREFIX + abi + "/";
         String library = prefix + WrapperConfig.GADGET_LIBRARY;
         String config = prefix + WrapperConfig.GADGET_CONFIG;
@@ -121,6 +121,11 @@ final class WrapperRuntime {
         if (!hasLibrary && !hasConfig && !hasScript) return;
         if (!hasLibrary || !hasConfig) {
             throw new IOException("Frida Gadget requires both library and config for " + abi);
+        }
+
+        if (custom) {
+            WrapperGadget.validateCustomConfig(runtime.get(config));
+            return;
         }
 
         JsonObject interaction;

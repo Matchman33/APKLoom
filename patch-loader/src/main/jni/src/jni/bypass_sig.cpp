@@ -887,6 +887,13 @@ namespace lspd {
 
     static bool is_npatch_module_native_caller(const void* caller_pc) {
         if (caller_pc == nullptr) return false;
+        {
+            std::scoped_lock lock(g_path_mutex);
+            // Standalone wrappers have no modules to distinguish. Avoid taking
+            // the linker lock from a Gadget worker while another thread waits
+            // for its dlopen constructor to finish.
+            if (moduleNativeLibraryRoots.empty()) return false;
+        }
         Dl_info info = {};
         if (dladdr(caller_pc, &info) == 0 || info.dli_fname == nullptr || info.dli_fname[0] == '\0') {
             return false;
@@ -934,6 +941,11 @@ namespace lspd {
             return create_memfd_from_string("npatch_apk_maps_view",
                                             content);
         }
+        // No proc view is needed in this mode. A needless dladdr() here can
+        // deadlock constructors that wait for a worker to read /proc.
+        if (!g_lib_hide_enabled) {
+            return -1;
+        }
         if (is_jiagu_or_stub_caller(caller_pc)) {
             return -1;
         }
@@ -942,10 +954,6 @@ namespace lspd {
         }
 
         if (!is_maps_path(pathname) && !is_smaps_path(pathname)) {
-            return -1;
-        }
-
-        if (!g_lib_hide_enabled) {
             return -1;
         }
 

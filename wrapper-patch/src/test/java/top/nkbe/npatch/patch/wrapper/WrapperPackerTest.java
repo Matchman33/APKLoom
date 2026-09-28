@@ -382,7 +382,7 @@ public class WrapperPackerTest {
     @Test public void embedsPerPackageGadgetAndRecordsGeneratedConfiguration() throws Exception {
         File input = input("Gadget.apk", false);
         File output = new File(temporary.getRoot(), "Gadget-wrapped.apk");
-        byte[] script = "console.log('wrapper gadget');".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] script = new byte[] {0, (byte) 0xff, (byte) 0xc3, 0x28, (byte) 0x80};
         WrapperGadget gadget = WrapperGadget.script(gadgetElf("arm64-v8a"), script);
         WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(),
                 false, gadget, ignored -> {});
@@ -398,6 +398,29 @@ public class WrapperPackerTest {
             assertTrue(config.get("gadgetEnabled").getAsBoolean());
             assertEquals("arm64-v8a", config.get("gadgetAbi").getAsString());
             assertEquals("script", config.get("gadgetMode").getAsString());
+        }
+    }
+
+    @Test public void customGadgetSurvivesSigningWithVerbatimConfigurationAndScript() throws Exception {
+        File input = input("CustomGadget.apk", false);
+        File output = new File(temporary.getRoot(), "CustomGadget-wrapped.apk");
+        byte[] config = "{\r\n\"interaction\":{\"type\":\"vendor\"},\"extra\":\"自定义\"\r\n}\n"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] script = new byte[] {0, (byte) 0xff, (byte) 0xc3, 0x28, (byte) 0x80};
+        WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(), false,
+                WrapperGadget.custom(gadgetElf("arm64-v8a"), config, script), ignored -> {});
+        assertTrue(new ApkVerifier.Builder(output).setMinCheckedPlatformVersion(28).build().verify().isVerified());
+        try (ZipFile zip = new ZipFile(output)) {
+            String prefix = WrapperConfig.RUNTIME_PREFIX + WrapperConfig.GADGET_PREFIX + "arm64-v8a/";
+            assertArrayEquals(config, zip.getInputStream(zip.getEntry(prefix + WrapperConfig.GADGET_CONFIG)).readAllBytes());
+            assertArrayEquals(script, zip.getInputStream(zip.getEntry(prefix + WrapperConfig.GADGET_SCRIPT)).readAllBytes());
+            assertArrayEquals(Files.readAllBytes(input.toPath()), zip.getInputStream(zip.getEntry(WrapperConfig.APK_PATH)).readAllBytes());
+            var metadata = com.google.gson.JsonParser.parseString(new String(zip.getInputStream(zip.getEntry(WrapperConfig.CONFIG_PATH)).readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            assertEquals("custom", metadata.get("gadgetMode").getAsString());
+            String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(config));
+            assertEquals(digest, metadata.getAsJsonObject("runtimeSha256")
+                    .get(WrapperConfig.GADGET_PREFIX + "arm64-v8a/" + WrapperConfig.GADGET_CONFIG).getAsString());
         }
     }
 

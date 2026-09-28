@@ -14,8 +14,19 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertArrayEquals;
 
 public class WrapperRuntimeTest {
+    @Test public void allowsCustomSchemaOnlyForExplicitPerPackageCustomSelection() throws Exception {
+        byte[] config = "{\"interaction\":{\"type\":\"vendor\"},\"extras\":true}\n".getBytes(StandardCharsets.UTF_8);
+        assertThrows(IOException.class, () -> WrapperRuntime.read(gadgetArchive(new String(config, StandardCharsets.UTF_8), false)));
+        WrapperGadget selected = WrapperGadget.custom(elf("x86_64", false), config, null);
+        Map<String, byte[]> entries = WrapperRuntime.read(gadgetArchive(true, true), selected);
+        assertEquals(5, entries.size());
+        assertArrayEquals(config, entries.get("gadget/x86_64/" + WrapperConfig.GADGET_CONFIG));
+        assertFalse(entries.keySet().stream().anyMatch(name -> name.startsWith("gadget/arm64-v8a/")));
+        assertFalse(entries.containsKey("gadget/x86_64/" + WrapperConfig.GADGET_SCRIPT));
+    }
     @Test public void acceptsBothSupportedArchitectures() throws Exception {
         assertEquals(3, WrapperRuntime.read(baseArchive(false)).size());
     }
@@ -39,8 +50,14 @@ public class WrapperRuntimeTest {
         assertEquals(6, WrapperRuntime.read(gadgetArchive(true, true)).size());
     }
 
-    @Test public void treatsSoNamedScriptAsTextInsteadOfElf() throws Exception {
+    @Test public void acceptsSoNamedScriptWithoutElfHeader() throws Exception {
         assertEquals(6, WrapperRuntime.read(gadgetArchive(false, true)).size());
+    }
+
+    @Test public void preservesEncryptedScriptBytesFromRuntimeArchive() throws Exception {
+        byte[] script = new byte[] {0, (byte) 0xff, (byte) 0xc3, 0x28, (byte) 0x80};
+        Map<String, byte[]> entries = WrapperRuntime.read(gadgetArchive(gadgetConfig("script", WrapperConfig.GADGET_SCRIPT), script));
+        assertArrayEquals(script, entries.get(WrapperConfig.GADGET_PREFIX + "arm64-v8a/" + WrapperConfig.GADGET_SCRIPT));
     }
 
     @Test public void rejectsScriptModeWithoutColocatedSoScript() throws Exception {
@@ -103,15 +120,18 @@ public class WrapperRuntimeTest {
     }
 
     private byte[] gadgetArchive(String config, boolean includeScript) throws Exception {
+        return gadgetArchive(config, includeScript ? "rpc.exports = { init() {} };".getBytes(StandardCharsets.UTF_8) : null);
+    }
+
+    private byte[] gadgetArchive(String config, byte[] script) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
             addBaseRuntime(zip, false);
             String prefix = WrapperConfig.GADGET_PREFIX + "arm64-v8a/";
             add(zip, prefix + WrapperConfig.GADGET_LIBRARY, elf("arm64-v8a", false));
             add(zip, prefix + WrapperConfig.GADGET_CONFIG, config.getBytes(StandardCharsets.UTF_8));
-            if (includeScript) {
-                add(zip, prefix + WrapperConfig.GADGET_SCRIPT,
-                        "rpc.exports = { init() {} };".getBytes(StandardCharsets.UTF_8));
+            if (script != null) {
+                add(zip, prefix + WrapperConfig.GADGET_SCRIPT, script);
             }
         }
         return output.toByteArray();

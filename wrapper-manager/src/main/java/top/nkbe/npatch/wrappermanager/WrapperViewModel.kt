@@ -42,7 +42,7 @@ import top.nkbe.npatch.share.WrapperOptions
 data class SelectedApk(val file: File, val packageName: String, val label: String, val icon: Bitmap, val sourceUri: Uri?)
 data class InstalledApp(val packageName: String, val label: String)
 data class SelectedAsset(val file: File, val displayName: String, val detail: String? = null)
-enum class GadgetMode { LISTEN, SCRIPT }
+enum class GadgetMode { LISTEN, SCRIPT, CUSTOM }
 data class WrapperState(
     val selected: SelectedApk? = null,
     val packageName: String = "",
@@ -57,6 +57,8 @@ data class WrapperState(
     val gadgetPort: String = "27043",
     val gadgetWaitForClient: Boolean = true,
     val gadgetScript: SelectedAsset? = null,
+    val gadgetCustomConfig: String = "",
+    val gadgetCustomScriptEnabled: Boolean = false,
     val busy: Boolean = false,
     val cancelling: Boolean = false,
     val stage: PackControl.Stage = PackControl.Stage.PREPARING,
@@ -100,6 +102,28 @@ class WrapperViewModel(application: Application) : AndroidViewModel(application)
         if (value.all(Char::isDigit)) invalidateOutput { it.copy(gadgetPort = value, error = null, notice = null) }
     }
     fun gadgetWaitForClient(value: Boolean) = invalidateOutput { it.copy(gadgetWaitForClient = value, error = null, notice = null) }
+    fun gadgetCustomScriptEnabled(value: Boolean) = invalidateOutput { it.copy(gadgetCustomScriptEnabled = value, error = null, notice = null) }
+    fun gadgetCustomConfig(value: String) {
+        if (mutable.value.busy) return
+        if (value.toByteArray(Charsets.UTF_8).size > WrapperGadget.MAX_CONFIG_SIZE) {
+            error(IOException(app.getString(R.string.gadget_config_too_large)))
+            return
+        }
+        invalidateOutput { it.copy(gadgetCustomConfig = value, error = null, notice = null) }
+    }
+    fun useGadgetPreset(mode: GadgetMode) {
+        val current = mutable.value
+        if (current.busy) return
+        val config = when (mode) {
+            GadgetMode.LISTEN -> WrapperGadget.listenConfig(current.gadgetAddress,
+                current.gadgetPort.toIntOrNull() ?: throw IOException(app.getString(R.string.gadget_port_invalid)),
+                current.gadgetWaitForClient)
+            GadgetMode.SCRIPT -> WrapperGadget.scriptConfig()
+            GadgetMode.CUSTOM -> return
+        }
+        invalidateOutput { it.copy(gadgetCustomConfig = config, gadgetCustomScriptEnabled = mode == GadgetMode.SCRIPT,
+            error = null, notice = null) }
+    }
     fun error(error: Throwable) { mutable.update { it.copy(error = error.message ?: error.javaClass.simpleName) } }
     fun notice(message: String) { mutable.update { it.copy(notice = message) } }
 
@@ -170,6 +194,19 @@ class WrapperViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun selectGadgetConfig(uri: Uri) = work {
+        val file = optionFile("config", "gadget.json")
+        try {
+            copyUri(uri, file, WrapperGadget.MAX_CONFIG_SIZE.toLong())
+            val text = WrapperGadget.validateCustomConfig(file.readBytes())
+            val previousOutput = mutable.value.output
+            mutable.update { it.copy(gadgetCustomConfig = text, output = null, error = null, notice = null) }
+            workspace.deleteOutput(previousOutput)
+        } finally {
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
     fun selectInstalled(packageName: String) = work {
         val info = app.packageManager.getApplicationInfo(packageName, 0)
         if (!info.splitSourceDirs.isNullOrEmpty()) throw IOException(app.getString(R.string.splits_unsupported))
@@ -230,6 +267,14 @@ class WrapperViewModel(application: Application) : AndroidViewModel(application)
                 GadgetMode.SCRIPT -> {
                     val script = current.gadgetScript ?: throw IOException(app.getString(R.string.gadget_script_required))
                     WrapperGadget.script(library, script.file.readBytes())
+                }
+                GadgetMode.CUSTOM -> {
+                    val script = if (current.gadgetCustomScriptEnabled) {
+                        val selectedScript = current.gadgetScript
+                            ?: throw IOException(app.getString(R.string.gadget_script_required))
+                        selectedScript.file.readBytes()
+                    } else null
+                    WrapperGadget.custom(library, current.gadgetCustomConfig.toByteArray(Charsets.UTF_8), script)
                 }
             }
         } else null

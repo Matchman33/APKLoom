@@ -31,11 +31,12 @@ public final class WrapperCli {
     @Parameter(names = "--http", description = "Cleartext HTTP policy: original, allow, block") private String http = "original";
     @Parameter(names = "--request-overlay", description = "Declare overlay permission and prompt once at launch") private boolean requestOverlay;
     @Parameter(names = "--gadget", description = "Local Frida Gadget ELF file") private String gadget;
-    @Parameter(names = "--gadget-mode", description = "Frida Gadget mode: listen or script") private String gadgetMode = "listen";
+    @Parameter(names = "--gadget-mode", description = "Frida Gadget mode: listen, script or custom") private String gadgetMode = "listen";
+    @Parameter(names = "--gadget-config", description = "UTF-8 JSON object for custom mode (preserved verbatim)") private String gadgetConfig;
     @Parameter(names = "--gadget-address", description = "Listen address") private String gadgetAddress = "127.0.0.1";
     @Parameter(names = "--gadget-port", description = "Listen port") private int gadgetPort = 27043;
     @Parameter(names = "--gadget-resume", description = "Do not wait for a client when loading Listen mode") private boolean gadgetResume;
-    @Parameter(names = "--gadget-script", description = "UTF-8 JavaScript file for Script mode") private String gadgetScript;
+    @Parameter(names = "--gadget-script", description = "Script payload for script or custom mode (preserved as raw bytes)") private String gadgetScript;
     @Parameter(names = {"-h", "--help"}, help = true) private boolean help;
 
     public static void main(String[] args) {
@@ -92,9 +93,21 @@ public final class WrapperCli {
     private WrapperGadget gadget() throws Exception {
         if (gadget == null) {
             if (gadgetScript != null) throw new IllegalArgumentException("--gadget-script requires --gadget");
+            if (gadgetConfig != null || "custom".equalsIgnoreCase(gadgetMode)) {
+                throw new IllegalArgumentException("Custom Gadget config requires --gadget");
+            }
             return null;
         }
+        if (gadgetConfig != null && !"custom".equalsIgnoreCase(gadgetMode)) {
+            throw new IllegalArgumentException("--gadget-config requires --gadget-mode custom");
+        }
         byte[] library = readFile(new File(gadget), MAX_GADGET_SIZE, "Frida Gadget");
+        if ("custom".equalsIgnoreCase(gadgetMode)) {
+            if (gadgetConfig == null) throw new IllegalArgumentException("Custom mode requires --gadget-config");
+            byte[] config = readFile(new File(gadgetConfig), WrapperGadget.MAX_CONFIG_SIZE, "Gadget config");
+            byte[] script = gadgetScript == null ? null : readFile(new File(gadgetScript), MAX_SCRIPT_SIZE, "Gadget script");
+            return WrapperGadget.custom(library, config, script);
+        }
         if ("listen".equalsIgnoreCase(gadgetMode)) {
             if (gadgetScript != null) throw new IllegalArgumentException("--gadget-script is only valid in script mode");
             return WrapperGadget.listen(library, gadgetAddress, gadgetPort, !gadgetResume);
@@ -103,7 +116,7 @@ public final class WrapperCli {
             if (gadgetScript == null) throw new IllegalArgumentException("Script mode requires --gadget-script");
             return WrapperGadget.script(library, readFile(new File(gadgetScript), MAX_SCRIPT_SIZE, "Gadget script"));
         }
-        throw new IllegalArgumentException("--gadget-mode must be listen or script");
+        throw new IllegalArgumentException("--gadget-mode must be listen, script or custom");
     }
 
     private byte[] readFile(File file, long maximumSize, String label) throws Exception {

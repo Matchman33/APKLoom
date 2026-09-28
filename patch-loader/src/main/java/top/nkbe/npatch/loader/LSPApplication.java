@@ -295,7 +295,9 @@ public class LSPApplication {
         }
 
         registerModuleCallerPrefixes(service);
-        SigBypass.registerModuleNativeLibraryRoots(context);
+        // Standalone mode does not load NPatch modules. Keep the native caller
+        // roots empty so Gadget constructors need no linker-locked dladdr lookup.
+        if (!config.standalone) SigBypass.registerModuleNativeLibraryRoots(context);
         SigBypass.doSigBypass(context, config.lspConfig.sigBypassLevel, config.hideLibs);
         disableProfile(context);
 

@@ -128,6 +128,9 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
     val scriptPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) model.selectGadgetScript(uri)
     }
+    val configPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) model.selectGadgetConfig(uri)
+    }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri ->
         if (uri != null) model.export(uri)
     }
@@ -192,7 +195,11 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
                         GadgetMode.entries.forEachIndexed { index, mode ->
                             SegmentedButton(selected = state.gadgetMode == mode, onClick = { model.gadgetMode(mode) },
                                 enabled = !state.busy, shape = SegmentedButtonDefaults.itemShape(index, GadgetMode.entries.size)) {
-                                Text(stringResource(if (mode == GadgetMode.LISTEN) R.string.gadget_listen else R.string.gadget_script))
+                                Text(stringResource(when (mode) {
+                                    GadgetMode.LISTEN -> R.string.gadget_listen
+                                    GadgetMode.SCRIPT -> R.string.gadget_script
+                                    GadgetMode.CUSTOM -> R.string.gadget_custom
+                                }))
                             }
                         }
                     }
@@ -212,7 +219,39 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
                             Switch(checked = state.gadgetWaitForClient, onCheckedChange = model::gadgetWaitForClient,
                                 enabled = !state.busy)
                         }
-                    } else {
+                    }
+                    if (state.gadgetMode == GadgetMode.CUSTOM) {
+                        Text(stringResource(R.string.gadget_custom_desc), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { configPicker.launch(arrayOf("application/json", "text/*", "*/*")) },
+                            enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                            Text(stringResource(R.string.import_gadget_config))
+                        }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { perform { model.useGadgetPreset(GadgetMode.LISTEN) } }, enabled = !state.busy) {
+                                Text(stringResource(R.string.gadget_use_listen_preset))
+                            }
+                            TextButton(onClick = { perform { model.useGadgetPreset(GadgetMode.SCRIPT) } }, enabled = !state.busy) {
+                                Text(stringResource(R.string.gadget_use_script_preset))
+                            }
+                        }
+                        OutlinedTextField(value = state.gadgetCustomConfig, onValueChange = model::gadgetCustomConfig,
+                            label = { Text(stringResource(R.string.gadget_config_json)) }, enabled = !state.busy,
+                            minLines = 6, maxLines = 14, modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(stringResource(R.string.gadget_attach_script), modifier = Modifier.weight(1f))
+                            Switch(checked = state.gadgetCustomScriptEnabled, onCheckedChange = model::gadgetCustomScriptEnabled,
+                                enabled = !state.busy)
+                        }
+                        Text(stringResource(R.string.gadget_custom_script_desc), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (state.gadgetMode == GadgetMode.SCRIPT ||
+                        (state.gadgetMode == GadgetMode.CUSTOM && state.gadgetCustomScriptEnabled)) {
                         OutlinedButton(onClick = { scriptPicker.launch(arrayOf("text/*", "application/javascript", "*/*")) },
                             enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.padding(end = 8.dp))

@@ -234,15 +234,10 @@ public class LSPAppComponentFactoryStub extends AppComponentFactory {
             throw new IOException("Unsupported instruction set: " + instruction);
         }
 
+        File gadgetFile = null;
         if (isMainProcess()) {
             bootstrapStage = "extract_gadget";
-            File gadgetFile = prepareGadgetRuntime(loader, abi, Process.myUid() / 100000);
-            if (gadgetFile != null) {
-                bootstrapStage = "load_gadget";
-                Log.i(TAG, "Loading Frida Gadget: " + gadgetFile);
-                System.load(gadgetFile.getAbsolutePath());
-                Log.i(TAG, "Frida Gadget load completed");
-            }
+            gadgetFile = prepareGadgetRuntime(loader, abi, Process.myUid() / 100000);
         }
 
         bootstrapStage = "read_loader_dex";
@@ -265,6 +260,15 @@ public class LSPAppComponentFactoryStub extends AppComponentFactory {
         Log.i(TAG, "Loading native bootstrap: " + nativeFile);
         System.load(nativeFile.getAbsolutePath());
         clearDexBuffer();
+
+        // Install NPatch/LSPlant's ART hooks before a Gadget script initializes
+        // its Java bridge. Extract assets above, before NPatch redirects APK reads.
+        if (gadgetFile != null) {
+            bootstrapStage = "load_gadget";
+            Log.i(TAG, "Loading Frida Gadget: " + gadgetFile);
+            System.load(gadgetFile.getAbsolutePath());
+            Log.i(TAG, "Frida Gadget load completed");
+        }
     }
 
     private static int readConfig(ClassLoader loader) throws IOException {
