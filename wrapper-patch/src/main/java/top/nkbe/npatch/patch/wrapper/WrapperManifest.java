@@ -28,11 +28,6 @@ public final class WrapperManifest {
     public final int minSdk;
     public final String appComponentFactory;
 
-    public boolean hasNetworkSecurityConfig() {
-        return root.children.stream().filter(n -> n.name.equals("application"))
-                .anyMatch(n -> n.attribute(ANDROID, "networkSecurityConfig") != null);
-    }
-
     public WrapperManifest(byte[] binaryXml) throws IOException {
         List<Node> roots = new ArrayList<>();
         new AxmlReader(binaryXml).accept(new AxmlVisitor() {
@@ -107,7 +102,6 @@ public final class WrapperManifest {
     public byte[] rewrite(String wrapperPackage, String npatchMetadata, WrapperOptions options) throws IOException {
         validatePackage(wrapperPackage);
         Set<String> requiredPermissions = new java.util.LinkedHashSet<>();
-        if (options.httpPolicy == WrapperOptions.HTTP_ALLOW) requiredPermissions.add("android.permission.INTERNET");
         if (options.requestOverlayPermission) requiredPermissions.add("android.permission.SYSTEM_ALERT_WINDOW");
         Map<String, String> permissions = new HashMap<>();
         for (Node child : root.children) {
@@ -137,8 +131,6 @@ public final class WrapperManifest {
             if (ANDROID.equals(attr.ns)) {
                 if (sdk && attr.name.equals("minSdkVersion")) continue;
                 if (application && Set.of("appComponentFactory", "hasCode", "extractNativeLibs").contains(attr.name)) continue;
-                if (application && attr.name.equals("usesCleartextTraffic")
-                        && options.httpPolicy != WrapperOptions.HTTP_ORIGINAL) continue;
                 if (value instanceof String text) {
                     if ((COMPONENTS.contains(node.name) && attr.name.equals("name")) || CLASS_ATTRIBUTES.contains(attr.name)) {
                         value = className(text, packageName);
@@ -162,10 +154,6 @@ public final class WrapperManifest {
         }
         if (sdk) output.attr(ANDROID, "minSdkVersion", 0x0101020c, TYPE_INT, minSdk);
         if (application) {
-            if (options.httpPolicy != WrapperOptions.HTTP_ORIGINAL) {
-                output.attr(ANDROID, "usesCleartextTraffic", 0x010104ec, NodeVisitor.TYPE_INT_BOOLEAN,
-                        options.httpPolicy == WrapperOptions.HTTP_ALLOW);
-            }
             output.attr(ANDROID, "appComponentFactory", 0x0101057a, NodeVisitor.TYPE_STRING, WrapperConfig.FACTORY);
             output.attr(ANDROID, "hasCode", 0x0101000c, NodeVisitor.TYPE_INT_BOOLEAN, true);
             output.attr(ANDROID, "extractNativeLibs", 0x010104ea, NodeVisitor.TYPE_INT_BOOLEAN, true);

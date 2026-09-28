@@ -24,10 +24,8 @@ import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
@@ -40,8 +38,6 @@ import top.nkbe.npatch.share.PatchConfig;
 
 public final class WrapperPacker {
     private WrapperPacker() {}
-
-    private static final int MAX_XML_BYTES = 16 * 1024 * 1024;
 
     public static WrapperManifest inspect(File input) throws IOException {
         try (ZipFile zip = new ZipFile(input)) {
@@ -111,7 +107,6 @@ public final class WrapperPacker {
             originalSignature = encoded.toString();
         }
         config.signatureCompat = signatureCompat;
-        config.httpPolicy = capabilities.httpPolicy;
         config.requestOverlayPermission = capabilities.requestOverlayPermission;
         config.hookRuntime = WrapperConfig.HOOK_RUNTIME;
         config.gadgetEnabled = gadget != null;
@@ -132,7 +127,6 @@ public final class WrapperPacker {
         npatch.standalone = true;
         npatch.embeddedApkSha256 = config.apkSha256;
         npatch.originalPackage = manifest.packageName;
-        npatch.httpPolicy = capabilities.httpPolicy;
         npatch.requestOverlayPermission = capabilities.requestOverlayPermission;
         byte[] npatchBytes = new Gson().toJson(npatch).getBytes(StandardCharsets.UTF_8);
         byte[] rewritten = manifest.rewrite(targetPackage, java.util.Base64.getEncoder().encodeToString(npatchBytes), capabilities);
@@ -141,11 +135,6 @@ public final class WrapperPacker {
         File temporary = new File(workDir, "result.apk");
         try {
             log.accept("Building " + targetPackage);
-            log.accept("HTTP policy: " + switch (capabilities.httpPolicy) {
-                case WrapperOptions.HTTP_ALLOW -> "allow";
-                case WrapperOptions.HTTP_BLOCK -> "block";
-                default -> "original";
-            });
             if (capabilities.requestOverlayPermission) log.accept("Overlay permission: declare and prompt once at launch");
             if (packageRenamed) log.accept("Rewriting resource package namespace for " + targetPackage);
             ZFileOptions options = new ZFileOptions().setStorageFactory(new ChunkBasedByteStorageFactory(
@@ -167,9 +156,6 @@ public final class WrapperPacker {
                 Set<String> excluded = new HashSet<>();
                 Set<String> storeUncompressed = new HashSet<>();
                 Set<String> nativeAbis = new HashSet<>();
-                Map<String, byte[]> networkConfigs = new HashMap<>();
-                boolean rewriteNetworkConfig = manifest.hasNetworkSecurityConfig()
-                        && capabilities.httpPolicy != WrapperOptions.HTTP_ORIGINAL;
                 Enumeration<? extends ZipEntry> entries = original.entries();
                 while (entries.hasMoreElements()) {
                     control.check();
@@ -183,22 +169,6 @@ public final class WrapperPacker {
                     }
                     if (name.startsWith("/") || name.contains("\\") || Arrays.asList(name.split("/")).contains("..")) {
                         throw new IOException("Invalid APK entry path: " + name);
-                    }
-                    if (rewriteNetworkConfig
-                            && name.matches("res/xml(?:-[^/]+)?/[^/]+\\.xml") && !entry.isDirectory()) {
-                        if (entry.getSize() < 0 || entry.getSize() > MAX_XML_BYTES) {
-                            throw new IOException("Invalid XML resource size: " + name);
-                        }
-                        try (InputStream contents = original.getInputStream(entry)) {
-                            byte[] xml = ByteStreams.toByteArray(ByteStreams.limit(contents, MAX_XML_BYTES + 1L));
-                            if (xml.length > MAX_XML_BYTES) throw new IOException("Oversized XML resource: " + name);
-                            byte[] rewrittenXml = WrapperNetworkSecurity.rewrite(xml,
-                                    capabilities.httpPolicy == WrapperOptions.HTTP_ALLOW);
-                            if (rewrittenXml != null) {
-                                networkConfigs.put(name, rewrittenXml);
-                                excluded.add(name);
-                            }
-                        }
                     }
                     if (entry.isDirectory() || name.equals("AndroidManifest.xml")
                             || signatureEntry(name)) {
@@ -214,9 +184,6 @@ public final class WrapperPacker {
                 if (!nativeAbis.isEmpty() && !nativeAbis.contains("arm64-v8a") && !nativeAbis.contains("x86_64")) {
                     throw new IOException("This NPatch runtime requires a 64-bit application ABI");
                 }
-                if (rewriteNetworkConfig && networkConfigs.isEmpty()) {
-                    throw new IOException("Cannot override HTTP policy: network security config XML not found in APK");
-                }
                 log.accept("Copying resources and assets without recompression");
                 control.report(PackControl.Stage.COPYING, 0, -1);
                 destination.mergeFrom(source, name -> { control.check(); return excluded.contains(name); });
@@ -225,11 +192,6 @@ public final class WrapperPacker {
                     try (InputStream contents = control.track(original.getInputStream(entry), PackControl.Stage.COPYING, entry.getSize())) {
                         destination.add(name, contents, false);
                     }
-                }
-                for (var configEntry : networkConfigs.entrySet()) {
-                    ZipEntry originalEntry = original.getEntry(configEntry.getKey());
-                    destination.add(configEntry.getKey(), new ByteArrayInputStream(configEntry.getValue()),
-                            originalEntry.getMethod() == ZipEntry.DEFLATED);
                 }
                 if (packageRenamed) {
                     ZipEntry resources = original.getEntry("resources.arsc");

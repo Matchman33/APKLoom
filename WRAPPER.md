@@ -72,8 +72,8 @@ GitHub Actions 构建正式版本时，配置 `KEY_STORE`（Base64 密钥文件�
 # 基本封装
 java -jar out/wrapper/apkloom-cli.jar example.apk -o output
 
-# 允许 HTTP，并在首次打开时提示悬浮窗授权
-java -jar out/wrapper/apkloom-cli.jar example.apk -o output-options --http allow --request-overlay
+# 首次打开时提示悬浮窗授权
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output-options --request-overlay
 
 # 修改包名并启用原签名兼容
 java -jar out/wrapper/apkloom-cli.jar example.apk -o output-renamed -p example.wrapped --signature-compat
@@ -86,10 +86,9 @@ java -jar out/wrapper/apkloom-cli.jar --help
 | --- | --- |
 | `-o` / `--output` | 必填，输出目录；保留输入 APK 文件名，不覆盖已有文件 |
 | `-p` / `--package` | 指定生成应用的包名，默认保持原包名 |
-| `--http` | `original` 保持原设置（默认）、`allow` 允许、`block` 禁止明文 HTTP |
 | `--request-overlay` | 添加悬浮窗权限并在首次打开时提示授权 |
 | `--signature-compat` | 启用应用内原签名兼容，不改变 APK 实际签名 |
 | `--keystore` / `--store-type` / `--alias` | 指定生成 APK 的签名密钥、密钥库类型（默认 BKS）和别名 |
 | `--store-password-env` / `--key-password-env` | 保存密码的环境变量名；不指定密钥密码时使用密钥库密码 |
 
-每次处理一个完整 APK。HTTP 和悬浮窗选项的限制见 [使用指南](README.md#手机上使用)；Gadget 参数见 [Gadget 使用](gadget/README.md)。
+每次处理一个完整 APK。悬浮窗选项见 [使用指南](README.md#手机上使用)；Gadget 参数见 [Gadget 使用](gadget/README.md)。

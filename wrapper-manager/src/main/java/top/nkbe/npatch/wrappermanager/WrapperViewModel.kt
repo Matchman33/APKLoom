@@ -48,7 +48,6 @@ data class WrapperState(
     val packageName: String = "",
     val filename: String = "",
     val signatureCompat: Boolean = false,
-    val httpPolicy: Int = WrapperOptions.HTTP_ORIGINAL,
     val requestOverlayPermission: Boolean = false,
     val gadgetEnabled: Boolean = false,
     val gadget: SelectedAsset? = null,
@@ -93,7 +92,6 @@ class WrapperViewModel(application: Application) : AndroidViewModel(application)
     }
     fun filename(value: String) = invalidateOutput { it.copy(filename = value, error = null, notice = null) }
     fun signatureCompat(value: Boolean) = invalidateOutput { it.copy(signatureCompat = value, error = null, notice = null) }
-    fun httpPolicy(value: Int) = invalidateOutput { it.copy(httpPolicy = value, error = null, notice = null) }
     fun requestOverlayPermission(value: Boolean) = invalidateOutput { it.copy(requestOverlayPermission = value, error = null, notice = null) }
     fun gadgetEnabled(value: Boolean) = invalidateOutput { it.copy(gadgetEnabled = value, error = null, notice = null) }
     fun gadgetMode(value: GadgetMode) = invalidateOutput { it.copy(gadgetMode = value, error = null, notice = null) }
@@ -290,7 +288,7 @@ class WrapperViewModel(application: Application) : AndroidViewModel(application)
         val runtime = app.assets.open("wrapper/runtime.zip").use { it.readBytes() }
         try {
             WrapperPacker.pack(selected.file, output, current.packageName, loader, signer, runtime,
-                current.signatureCompat, gadget, WrapperOptions(current.httpPolicy, current.requestOverlayPermission), { log ->
+                current.signatureCompat, gadget, WrapperOptions(current.requestOverlayPermission), { log ->
                 mutable.update { it.copy(logs = (it.logs + log).takeLast(200)) }
             }, activeControl!!)
         } catch (error: Exception) {

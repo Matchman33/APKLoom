@@ -28,7 +28,6 @@ public final class WrapperCli {
     @Parameter(names = "--store-password-env", description = "Environment variable containing the store password") private String passwordEnv;
     @Parameter(names = "--key-password-env") private String keyPasswordEnv;
     @Parameter(names = "--signature-compat", description = "Enable NPatch signature compatibility") private boolean signatureCompat;
-    @Parameter(names = "--http", description = "Cleartext HTTP policy: original, allow, block") private String http = "original";
     @Parameter(names = "--request-overlay", description = "Declare overlay permission and prompt once at launch") private boolean requestOverlay;
     @Parameter(names = "--gadget", description = "Local Frida Gadget ELF file") private String gadget;
     @Parameter(names = "--gadget-mode", description = "Frida Gadget mode: listen, script or custom") private String gadgetMode = "listen";
@@ -54,12 +53,7 @@ public final class WrapperCli {
 
     private void run() throws Exception {
         if (input.size() != 1) throw new IllegalArgumentException("Exactly one standalone APK is required; splits are not supported");
-        WrapperOptions options = new WrapperOptions(switch (http) {
-            case "original" -> WrapperOptions.HTTP_ORIGINAL;
-            case "allow" -> WrapperOptions.HTTP_ALLOW;
-            case "block" -> WrapperOptions.HTTP_BLOCK;
-            default -> throw new IllegalArgumentException("--http must be original, allow or block");
-        }, requestOverlay);
+        WrapperOptions options = new WrapperOptions(requestOverlay);
         File source = new File(input.get(0)).getCanonicalFile();
         WrapperManifest manifest = WrapperPacker.inspect(source);
         String packageName = target == null ? manifest.packageName : target;

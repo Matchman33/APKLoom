@@ -25,13 +25,11 @@ public class WrapperPackerTest {
     private static final String NS = "http://schemas.android.com/apk/res/android";
     @Rule public TemporaryFolder temporary = new TemporaryFolder();
 
-    @Test public void olderConfigurationsKeepOriginalBehavior() {
+    @Test public void olderConfigurationsDefaultToNoOverlayPrompt() {
         var gson = new com.google.gson.Gson();
-        var runtime = gson.fromJson("{\"standalone\":true}", top.nkbe.npatch.share.PatchConfig.class);
-        var wrapper = gson.fromJson("{\"formatVersion\":1}", WrapperConfig.class);
-        assertEquals(WrapperOptions.HTTP_ORIGINAL, runtime.httpPolicy);
+        var runtime = gson.fromJson("{\"standalone\":true,\"httpPolicy\":1}", top.nkbe.npatch.share.PatchConfig.class);
+        var wrapper = gson.fromJson("{\"formatVersion\":1,\"httpPolicy\":1}", WrapperConfig.class);
         assertFalse(runtime.requestOverlayPermission);
-        assertEquals(WrapperOptions.HTTP_ORIGINAL, wrapper.httpPolicy);
         assertFalse(wrapper.requestOverlayPermission);
     }
 
@@ -41,76 +39,63 @@ public class WrapperPackerTest {
         assertTrue(result.contains("application:networkSecurityConfig=2130903041"));
         assertEquals(2, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW")).count());
         assertTrue(result.contains("uses-permission:maxSdkVersion=22"));
-        assertThrows(IllegalArgumentException.class, () -> new WrapperOptions(3, false));
     }
 
-    @Test public void overridesHttpWithoutChangingTlsAndNormalizesEnabledPermissions() throws Exception {
-        for (int policy : new int[] {WrapperOptions.HTTP_ALLOW, WrapperOptions.HTTP_BLOCK}) {
-            List<String> result = attributes(new WrapperManifest(capabilitiesManifest()).rewrite(
-                    "example.renamed", null, new WrapperOptions(policy, true)));
-            assertEquals(1, result.stream().filter(s -> s.startsWith("application:usesCleartextTraffic=")).count());
-            assertTrue(result.contains("application:usesCleartextTraffic=" + (policy == WrapperOptions.HTTP_ALLOW)));
-            assertTrue(result.contains("application:networkSecurityConfig=2130903041"));
-            assertEquals(1, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW")).count());
-            if (policy == WrapperOptions.HTTP_ALLOW) {
-                assertEquals(1, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.INTERNET")).count());
-                assertFalse(result.stream().anyMatch(s -> s.contains("maxSdkVersion")));
-                assertFalse(result.stream().anyMatch(s -> s.startsWith("uses-permission-sdk-23:")));
-            } else {
-                // Blocking cleartext never removes networking permission (HTTPS still works).
-                assertTrue(result.contains("uses-permission-sdk-23:name=android.permission.INTERNET"));
-            }
-        }
+    @Test public void overlayNormalizesItsPermissionWithoutChangingNetworkSettings() throws Exception {
+        List<String> result = attributes(new WrapperManifest(capabilitiesManifest()).rewrite(
+                "example.renamed", null, new WrapperOptions(true)));
+        assertEquals(1, result.stream().filter(s -> s.equals("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW")).count());
+        assertFalse(result.stream().anyMatch(s -> s.contains("maxSdkVersion") && s.startsWith("uses-permission:")));
+        assertTrue(result.contains("application:usesCleartextTraffic=true"));
+        assertTrue(result.contains("application:networkSecurityConfig=2130903041"));
+        assertTrue(result.contains("uses-permission-sdk-23:name=android.permission.INTERNET"));
+        assertFalse(result.contains("uses-permission:name=android.permission.INTERNET"));
     }
 
-    @Test public void addsMissingPermissionsOnlyWhenRequested() throws Exception {
+    @Test public void addsOnlyOverlayPermissionWhenRequested() throws Exception {
         WrapperManifest manifest = new WrapperManifest(manifest(null));
         List<String> defaults = attributes(manifest.rewrite("example.original"));
         assertFalse(defaults.stream().anyMatch(s -> s.contains("usesCleartextTraffic") || s.contains("SYSTEM_ALERT_WINDOW") || s.contains("android.permission.INTERNET")));
-        List<String> enabled = attributes(manifest.rewrite("example.original", null, new WrapperOptions(WrapperOptions.HTTP_ALLOW, true)));
-        assertTrue(enabled.contains("uses-permission:name=android.permission.INTERNET"));
+        List<String> enabled = attributes(manifest.rewrite("example.original", null, new WrapperOptions(true)));
+        assertFalse(enabled.stream().anyMatch(s -> s.contains("usesCleartextTraffic") || s.contains("android.permission.INTERNET")));
         assertTrue(enabled.contains("uses-permission:name=android.permission.SYSTEM_ALERT_WINDOW"));
     }
 
-    @Test public void persistsCapabilitiesInBothConfigsAndKeepsEmbeddedApkIntact() throws Exception {
-        for (int policy : new int[] {WrapperOptions.HTTP_ORIGINAL, WrapperOptions.HTTP_ALLOW, WrapperOptions.HTTP_BLOCK}) {
-            File input = input("capabilities-" + policy + ".apk", false);
+    @Test public void persistsOverlayChoiceAndKeepsEmbeddedApkIntact() throws Exception {
+        for (boolean overlay : new boolean[] {false, true}) {
+            File input = input("capabilities-" + overlay + ".apk", false);
             File output = new File(temporary.newFolder(), "output.apk");
-            boolean overlay = policy != WrapperOptions.HTTP_ORIGINAL;
             WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(), false, null,
-                    new WrapperOptions(policy, overlay), ignored -> {}, new PackControl((stage, done, total) -> {}));
+                    new WrapperOptions(overlay), ignored -> {}, new PackControl((stage, done, total) -> {}));
             assertTrue(new ApkVerifier.Builder(output).setMinCheckedPlatformVersion(28).build().verify().isVerified());
             try (ZipFile zip = new ZipFile(output)) {
                 assertArrayEquals(Files.readAllBytes(input.toPath()), zip.getInputStream(zip.getEntry(WrapperConfig.APK_PATH)).readAllBytes());
                 for (String path : List.of(WrapperConfig.CONFIG_PATH, "assets/npatch/config.json")) {
                     var json = com.google.gson.JsonParser.parseString(new String(zip.getInputStream(zip.getEntry(path)).readAllBytes(),
                             java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
-                    assertEquals(policy, json.get("httpPolicy").getAsInt());
+                    assertFalse(json.has("httpPolicy"));
                     assertEquals(overlay, json.get("requestOverlayPermission").getAsBoolean());
                 }
             }
         }
     }
 
-    @Test public void signedWrapperRewritesNetworkConfigInOuterApkOnly() throws Exception {
-        for (int policy : new int[] {WrapperOptions.HTTP_ORIGINAL, WrapperOptions.HTTP_ALLOW, WrapperOptions.HTTP_BLOCK}) {
-            File input = new File(temporary.getRoot(), "network-" + policy + ".apk");
+    @Test public void networkConfigRemainsUnchangedInBothApks() throws Exception {
+        for (boolean overlay : new boolean[] {false, true}) {
+            File input = new File(temporary.getRoot(), "network-" + overlay + ".apk");
             byte[] xml = networkConfig();
             try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(input.toPath()))) {
                 entry(zip, "AndroidManifest.xml", capabilitiesManifest());
                 entry(zip, "res/xml/network_security_config.xml", xml);
                 entry(zip, "res/xml-v31/custom_network.xml", xml);
             }
-            File output = new File(temporary.getRoot(), "network-wrapped-" + policy + ".apk");
+            File output = new File(temporary.getRoot(), "network-wrapped-" + overlay + ".apk");
             WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(), false, null,
-                    new WrapperOptions(policy, false), ignored -> {}, new PackControl((stage, done, total) -> {}));
+                    new WrapperOptions(overlay), ignored -> {}, new PackControl((stage, done, total) -> {}));
             assertTrue(new ApkVerifier.Builder(output).setMinCheckedPlatformVersion(28).build().verify().isVerified());
             try (ZipFile zip = new ZipFile(output)) {
                 for (String path : List.of("res/xml/network_security_config.xml", "res/xml-v31/custom_network.xml")) {
-                    byte[] outer = zip.getInputStream(zip.getEntry(path)).readAllBytes();
-                    if (policy == WrapperOptions.HTTP_ORIGINAL) assertArrayEquals(xml, outer);
-                    else assertTrue(attributes(outer).contains("base-config:cleartextTrafficPermitted="
-                            + (policy == WrapperOptions.HTTP_ALLOW)));
+                    assertArrayEquals(xml, zip.getInputStream(zip.getEntry(path)).readAllBytes());
                 }
                 assertArrayEquals(Files.readAllBytes(input.toPath()),
                         zip.getInputStream(zip.getEntry(WrapperConfig.APK_PATH)).readAllBytes());
@@ -118,18 +103,15 @@ public class WrapperPackerTest {
         }
     }
 
-    @Test public void missingNetworkConfigFailsInsteadOfClaimingHttpIsAllowed() throws Exception {
+    @Test public void missingNetworkConfigDoesNotBlockOverlayPackaging() throws Exception {
         File input = new File(temporary.getRoot(), "missing-network-config.apk");
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(input.toPath()))) {
             entry(zip, "AndroidManifest.xml", capabilitiesManifest());
         }
         File output = new File(temporary.getRoot(), "missing-network-config-wrapped.apk");
-        IOException error = assertThrows(IOException.class, () -> WrapperPacker.pack(input, output,
-                "example.original", loader(), testSigner(), runtime(), false, null,
-                new WrapperOptions(WrapperOptions.HTTP_ALLOW, false), ignored -> {},
-                new PackControl((stage, done, total) -> {})));
-        assertTrue(error.getMessage().contains("network security config XML not found"));
-        assertFalse(output.exists());
+        WrapperPacker.pack(input, output, "example.original", loader(), testSigner(), runtime(), false, null,
+                new WrapperOptions(true), ignored -> {}, new PackControl((stage, done, total) -> {}));
+        assertTrue(new ApkVerifier.Builder(output).setMinCheckedPlatformVersion(28).build().verify().isVerified());
     }
 
     private static byte[] networkConfig() throws IOException {

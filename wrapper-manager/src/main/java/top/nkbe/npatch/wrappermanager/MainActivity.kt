@@ -80,7 +80,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
-import top.nkbe.npatch.share.WrapperOptions
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -263,23 +262,7 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
                     }
                 }
                 HorizontalDivider()
-                Text(stringResource(R.string.network_permissions), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.http_policy), style = MaterialTheme.typography.titleSmall)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    val policies = listOf(
-                        WrapperOptions.HTTP_ORIGINAL to R.string.http_original,
-                        WrapperOptions.HTTP_ALLOW to R.string.http_allow,
-                        WrapperOptions.HTTP_BLOCK to R.string.http_block,
-                    )
-                    policies.forEachIndexed { index, (policy, label) ->
-                        SegmentedButton(selected = state.httpPolicy == policy, onClick = { model.httpPolicy(policy) },
-                            shape = SegmentedButtonDefaults.itemShape(index, policies.size), enabled = !state.busy) {
-                            Text(stringResource(label))
-                        }
-                    }
-                }
-                Text(stringResource(R.string.http_policy_desc), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.permissions), style = MaterialTheme.typography.titleMedium)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f).padding(end = 12.dp)) {

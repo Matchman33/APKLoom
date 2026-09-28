@@ -4,11 +4,11 @@
 
 ## 目标与特点
 
-将单个 APK 生成为可安装、独立运行的应用，按需配置网络访问、悬浮窗权限和调试功能。
+将单个 APK 生成为可安装、独立运行的应用，按需配置悬浮窗权限和调试功能。
 
 - 从本地 APK 或已安装应用生成安装包。
 - 保留原图标、应用名称和完整原包，支持修改包名及输出文件名。
-- 支持 HTTP 访问策略、悬浮窗授权引导和可选原签名兼容。
+- 支持悬浮窗授权引导和可选原签名兼容。
 - 支持按次添加 Frida Gadget，选择监听、脚本或自定义 JSON 配置。
 - 生成后可导出、安装、打开或分享，运行时无需管理器常驻。
 
@@ -30,12 +30,11 @@
 | --- | --- |
 | 包名 | 默认保留原包名；需要与原应用共存时设置不同包名，部分应用可能不兼容 |
 | 原签名兼容 | 默认关闭；需要兼容应用内签名检查时开启，不改变安装包的实际签名 |
-| HTTP 访问 | 默认保持原设置；可选择允许或禁止明文 HTTP，HTTPS 证书校验保持不变 |
 | 申请悬浮窗权限 | 默认关闭；开启后首次启动提示前往系统设置授权，可跳过，之后不重复提示 |
 | Frida Gadget | 默认关闭；开启后选择本地 Gadget 文件，详见 [Gadget 使用](gadget/README.md) |
 
 同包名但签名不同的 APK 不能直接覆盖安装。请使用匹配的签名，或尝试修改包名。
-HTTP 选项适用于遵循 Android 网络策略的请求，不能拦截所有原生网络请求。关闭悬浮窗选项不会移除原应用已有的权限。
+生成过程不会修改原应用的网络安全配置。关闭悬浮窗选项不会移除原应用已有的权限。
 
 导出时若系统文件选择器不可用，文件保存到 `Download/ApkLoom`。修改选项后需重新生成 APK；需要保留的结果请先导出。
 
@@ -57,7 +56,7 @@ git submodule update --init --recursive
 
 ```powershell
 java -jar out/wrapper/apkloom-cli.jar example.apk -o output
-java -jar out/wrapper/apkloom-cli.jar example.apk -o output-options --http allow --request-overlay
+java -jar out/wrapper/apkloom-cli.jar example.apk -o output-options --request-overlay
 ```
 
 输出保留输入文件名，目标文件不能已存在。更多参数见 [命令行用法](WRAPPER.md#命令行用法)。

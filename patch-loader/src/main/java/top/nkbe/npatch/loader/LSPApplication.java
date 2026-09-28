@@ -305,7 +305,6 @@ public class LSPApplication {
         Startup.bootstrapXposed(false);
 
         if (config.standalone) {
-            WrapperHttpPolicy.install(config.httpPolicy);
             if (config.requestOverlayPermission) OverlayPermissionPrompt.install();
         }
 

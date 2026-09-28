@@ -19,12 +19,7 @@
     <string name="renamed_package_warning">修改包名可能使按包名读取资源的 SDK 无法正常工作。</string>
     <string name="filename">APK 文件名</string>
     <string name="generate">生成 APK</string>
-    <string name="network_permissions">网络与权限</string>
-    <string name="http_policy">HTTP 访问</string>
-    <string name="http_original">保持原设置</string>
-    <string name="http_allow">允许</string>
-    <string name="http_block">禁止</string>
-    <string name="http_policy_desc">控制遵循 Android 网络策略的明文 HTTP 请求，不改变 HTTPS 证书校验。使用原生套接字的请求可能不受此设置限制。</string>
+    <string name="permissions">权限</string>
     <string name="overlay_permission">申请悬浮窗权限</string>
     <string name="overlay_permission_desc">添加权限并在生成的应用打开时提示一次，可前往系统设置授权或跳过。关闭此选项会保留原应用已有的权限。</string>
     <string name="signature_compat">原签名兼容</string>
