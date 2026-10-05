@@ -19,6 +19,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CORE_ROOT}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${EXTERNAL_ROOT}/fmt/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${EXTERNAL_ROOT}/dobby/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${EXTERNAL_ROOT}/lsplant/lsplant/src/main/jni/include)
+get_target_property(DOBBY_INTERNAL_INCLUDE_DIRS dobby_static INCLUDE_DIRECTORIES)
+target_include_directories(${PROJECT_NAME} PRIVATE ${DOBBY_INTERNAL_INCLUDE_DIRS})
+if (ANDROID_ABI STREQUAL "arm64-v8a" AND NOT NearBranch)
+    message(FATAL_ERROR "APKLoom ARM64 ART hooks require Dobby NearBranch")
+endif ()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
         VERSION_CODE=${VERSION_CODE}
         VERSION_NAME=\"${VERSION_NAME}\")

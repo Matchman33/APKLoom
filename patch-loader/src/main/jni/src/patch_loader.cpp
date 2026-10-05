@@ -23,6 +23,8 @@
 
 #include "patch_loader.h"
 
+#include "art_inline_hook.h"
+
 #include "art/runtime/jit/profile_saver.h"
 #include "art/runtime/oat_file_manager.h"
 #include "native_util.h"
@@ -116,7 +118,12 @@ namespace lspd {
 
     void PatchLoader::InitArtHooker(JNIEnv* env, const InitInfo& initInfo) {
         handler = initInfo;
-        Context::InitArtHooker(env, initInfo);
+        if (!lsplant::Init(env, initInfo)) {
+            LOGE("Failed to initialize bounded ART hooks.");
+            auto exception = env->FindClass("java/lang/IllegalStateException");
+            if (exception != nullptr) env->ThrowNew(exception, "Cannot initialize APKLoom ART hooks");
+            return;
+        }
         if (!hide_libs_) {
             art::ProfileSaver::DisableInline(initInfo);
             art::FileManager::DisableBackgroundVerification(initInfo);
@@ -142,7 +149,7 @@ namespace lspd {
                 .inline_hooker =
                 [](auto t, auto r) {
                     void* bk = nullptr;
-                    return HookInline(t, r, &bk) == 0 ? bk : nullptr;
+                    return HookArtInline(t, r, &bk) == 0 ? bk : nullptr;
                 },
                 .inline_unhooker = [](auto t) { return UnhookInline(t) == 0; },
                 .art_symbol_resolver = [](auto symbol) { return GetArt()->getSymbAddress(symbol); },
@@ -179,6 +186,7 @@ namespace lspd {
         close(dex_fd);
 
         InitArtHooker(env, initInfo);
+        if (env->ExceptionCheck()) return;
         LoadDex(env, std::move(dex));
         InitHooks(env);
         RefreshLibHideSnapshots();

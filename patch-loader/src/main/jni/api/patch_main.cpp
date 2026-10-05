@@ -34,5 +34,6 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     lspd::PatchLoader::Init();
     lspd::ConfigImpl::Init();
     lspd::PatchLoader::GetInstance()->Load(env);
+    if (env->ExceptionCheck()) return JNI_ERR;
     return JNI_VERSION_1_6;
 }
