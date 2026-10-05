@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -35,6 +36,8 @@ import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.GetApp
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Share
@@ -43,6 +46,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -117,6 +125,9 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
     val installPermission = stringResource(R.string.install_permission)
     val notInstalled = stringResource(R.string.not_installed)
     var showApps by rememberSaveable { mutableStateOf(false) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
+    val packagingScroll = rememberScrollState()
+    BackHandler(enabled = showAbout) { showAbout = false }
     var consumedUri by rememberSaveable { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ApkPickerContract()) { uri ->
         if (uri != null) model.selectUri(uri)
@@ -139,8 +150,27 @@ private fun WrapperScreen(initialUri: Uri?, model: WrapperViewModel =
     fun perform(action: () -> Unit) { try { action() } catch (e: Exception) { model.error(e) } }
     fun resultUri(): Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", state.output!!)
 
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+    Scaffold(topBar = { TopAppBar(
+        title = { Text(stringResource(if (showAbout) R.string.about_updates else R.string.app_name),
+            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        navigationIcon = {
+            if (showAbout) IconButton(onClick = { showAbout = false }) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.back_to_packaging))
+            }
+        },
+        actions = {
+            if (!showAbout) TooltipBox(positionProvider = TooltipDefaults.rememberTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text(stringResource(R.string.about_updates)) } },
+                state = rememberTooltipState()) {
+                IconButton(onClick = { showAbout = true }) {
+                    Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.about_updates))
+                }
+            }
+        },
+    ) }) { padding ->
+        if (showAbout) {
+            AboutScreen((context.applicationContext as WrapperApplication).updates, Modifier.padding(padding))
+        } else Column(Modifier.fillMaxSize().padding(padding).verticalScroll(packagingScroll).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { picker.launch(Unit) }, enabled = !state.busy) {

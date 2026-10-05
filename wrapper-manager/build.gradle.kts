@@ -26,7 +26,7 @@ plugins {
 android {
     namespace = "top.nkbe.npatch.wrappermanager"
     defaultConfig { applicationId = "top.nkbe.npatch.wrappermanager" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions { isCoreLibraryDesugaringEnabled = true }
     buildTypes {
         release {
@@ -52,6 +52,7 @@ androidComponents.onVariants { variant ->
 dependencies {
     implementation(projects.wrapperPatch)
     implementation(projects.share.java)
+    implementation(npatch.google.gson)
     implementation(platform(npatch.androidx.compose.bom))
     implementation(npatch.androidx.activity.compose)
     implementation(npatch.androidx.compose.material3)
@@ -61,6 +62,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
 tasks.register("collectReleaseArtifacts") {

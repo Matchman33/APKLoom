@@ -10,4 +10,7 @@ class WrapperApplication : Application(), ViewModelStoreOwner {
     val model: WrapperViewModel by lazy {
         ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory.getInstance(this))[WrapperViewModel::class.java]
     }
+    internal val updates: UpdateViewModel by lazy {
+        ViewModelProvider(this, ViewModelProvider.NewInstanceFactory())[UpdateViewModel::class.java]
+    }
 }
